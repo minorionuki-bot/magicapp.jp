@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v14</title>
+<title>Magic Calc v15</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -194,7 +194,14 @@ html,body{
   <button class="btn btn-dark"   data-a="d:3"><span class="btn-lbl">3</span></button>
   <button class="btn btn-orange" data-a="op:+"><span class="btn-lbl">+</span></button>
   <!-- Row 5 -->
-  <button class="btn btn-dark"   data-a="pm"  id="pm"><span class="btn-lbl">±</span></button>
+  <button class="btn btn-dark"   data-a="pm"  id="pm">
+    <svg class="btn-lbl" width="30" height="26" viewBox="0 0 30 26" fill="none" stroke="white" stroke-linecap="round">
+      <line x1="3"  y1="9"  x2="13" y2="9"  stroke-width="2.2"/>
+      <line x1="8"  y1="4"  x2="8"  y2="14" stroke-width="2.2"/>
+      <line x1="10" y1="24" x2="24" y2="2"  stroke-width="1.8"/>
+      <line x1="17" y1="19" x2="27" y2="19" stroke-width="2.2"/>
+    </svg>
+  </button>
   <button class="btn btn-dark"   data-a="d:0"><span class="btn-lbl">0</span></button>
   <button class="btn btn-dark"   data-a="dec" ><span class="btn-lbl">.</span></button>
   <button class="btn btn-orange" data-a="eq"  ><span class="btn-lbl">=</span></button>
