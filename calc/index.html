@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v7</title>
+<title>Magic Calc v8</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -401,7 +401,7 @@ function inputOp(op) {
     S.hlOp    = op;
     S.sreset  = true;
     S.phase   = 'replacing';
-    S.liveExpr += ' ' + op;
+    S.liveExpr = fmtHist(S.total) + ' ' + op;
     render(); return;
   }
 
@@ -439,7 +439,7 @@ function inputEquals() {
     switch (S.phase) {
       case 'normal': {
         const { result, second } = computeEquals();
-        if (S.eqCount < CFG.equalsN) {
+        if (S.eqCount <= CFG.equalsN) {
           // まだ発動しない：通常計算表示
           if (S.op !== null && S.firstVal !== null) {
             S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
@@ -487,7 +487,7 @@ function inputEquals() {
     }
   } else {
     // ── 通常フォースモード ──
-    if (S.eqCount < CFG.equalsN) {
+    if (S.eqCount <= CFG.equalsN) {
       // まだ発動しない
       const { result, second } = computeEquals();
       if (S.op !== null && S.firstVal !== null) {
