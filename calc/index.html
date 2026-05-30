@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v12</title>
+<title>Magic Calc v13</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -203,6 +203,23 @@ html,body{
 </div><!-- /#app -->
 <script>
 'use strict';
+
+// ────────────────────────────────────────────
+// Supabase 設定
+// ────────────────────────────────────────────
+const SUPABASE_URL = 'https://pzohqibnxnxfjngpvtex.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2hxaWJueG54ZmpuZ3B2dGV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MzE5NjIsImV4cCI6MjA5NDMwNzk2Mn0.3MhcMlE5VIKjD9r6AWiBinV6igYjJVv3D9zqb3-o6Oc';
+
+async function fetchSupabaseSettings(uuid) {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/magiccalc_settings?uuid=eq.${encodeURIComponent(uuid)}&select=settings`,
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+    );
+    const data = await res.json();
+    return data?.[0]?.settings ?? null;
+  } catch(e) { return null; }
+}
 
 // ────────────────────────────────────────────
 // ボタンサイズをCSSカスタムプロパティで設定
@@ -698,6 +715,19 @@ setInterval(updateClock, 1000);
 // 初期描画
 // ────────────────────────────────────────────
 render();
+
+// ────────────────────────────────────────────
+// Supabase から設定を取得（?id=UUID がある場合）
+// ────────────────────────────────────────────
+(async () => {
+  const uuid = new URLSearchParams(location.search).get('id');
+  if (!uuid) return;
+  const s = await fetchSupabaseSettings(uuid);
+  if (!s) return;
+  Object.assign(CFG, s);
+  try { localStorage.setItem('magic_cfg', JSON.stringify(s)); } catch(e) {}
+  clear(); // 新しい設定で電卓をリセット
+})();
 </script>
 </body>
 </html>
