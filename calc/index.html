@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v11</title>
+<title>Magic Calc v12</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -294,7 +294,7 @@ function getTargetStr() {
       ? String(y % 100).padStart(2, '0')
       : String(y).padStart(4, '0');
   }
-  if (CFG.fmtMonth)  r += String(d.getMonth() + 1).padStart(2, '0');
+  if (CFG.fmtMonth)  r += String(d.getMonth() + 1); // 月は先頭ゼロなし（5月→「5」）
   if (CFG.fmtDay)    r += String(d.getDate()).padStart(2, '0');
   if (CFG.fmtHour) {
     let h = d.getHours();
