@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Magic Calc">
+<title>Magic Calc</title>
+<!--
+  設定はURLハッシュで渡す例:
+  #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
+  dt   : 1=日時モード 0=数値モード
+  coll : 1=コレクティブ 0=通常
+  eq   : フォースまでの=回数
+  target: 数値フォースの目標値
+  off  : 追加秒数
+  fY fSY fM fD fH fMin h24 : 日時フォーマット
+-->
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{height:100%;width:100%;overflow:hidden;background:#000}
+
+body{
+  display:flex;flex-direction:column;
+  height:100dvh;
+  color:#fff;
+  font-family:-apple-system,'SF Pro Display','Helvetica Neue',sans-serif;
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+
+/* ── 上部アイコン ── */
+#top-bar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 13px 0;flex-shrink:0;
+}
+.top-icon{
+  width:36px;height:36px;
+  background:#121212;
+  border:1px solid #2D2D2D;
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.top-icon svg{width:18px;height:18px}
+
+/* ── 表示エリア ── */
+#display{
+  flex:1;min-height:0;
+  display:flex;flex-direction:column;
+  align-items:flex-end;justify-content:flex-end;
+  padding:0 13px 6px;overflow:hidden;
+}
+#hist-line{
+  font-size:24px;font-weight:300;color:#888;
+  white-space:nowrap;max-width:100%;
+  overflow:hidden;text-align:right;
+  line-height:1.2;
+}
+#main-disp{
+  font-weight:300;color:#fff;
+  white-space:nowrap;
+  text-align:right;width:100%;
+  line-height:1;overflow:hidden;
+  transition:font-size 0.08s ease;
+}
+
+/* ── ボタングリッド ── */
+#btn-grid{
+  display:grid;
+  grid-template-columns:repeat(4, var(--bs));
+  grid-template-rows:repeat(5, var(--bs));
+  gap:12px;
+  padding:0 13px 36px;
+  flex-shrink:0;
+}
+
+/* ── ボタン共通 ── */
+.btn{
+  width:var(--bs);height:var(--bs);
+  border-radius:50%;border:none;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;position:relative;
+  -webkit-user-select:none;user-select:none;
+  font-family:inherit;
+  will-change:transform;
+  transition:transform 0.18s cubic-bezier(0.34,1.56,0.64,1);
+}
+.btn:active{transform:scale(1.30)}
+.btn-lbl{pointer-events:none;line-height:1}
+
+/* ── ダークボタン（数字） ── */
+.btn-dark{
+  background:#343434;
+  box-shadow:inset 0 1px 0 #5A5A5A,inset 0 -1px 0 #2A2A2A,inset 0 0 0 1px #444;
+  color:#fff;
+}
+.btn-dark:active{background:#737373;box-shadow:none}
+.btn-dark .btn-lbl{font-size:42px}
+
+/* ── グレーボタン（AC %  ⌫） ── */
+.btn-gray{
+  background:#5C5C5C;
+  box-shadow:inset 0 1px 0 #7A7A7A,inset 0 -1px 0 #4A4A4A,inset 0 0 0 1px #666;
+  color:#fff;
+}
+.btn-gray:active{background:#888;box-shadow:none}
+.btn-gray .btn-lbl{font-size:20px}
+
+/* ── オレンジボタン（演算子） ── */
+.btn-orange{
+  background:#FE9100;
+  box-shadow:inset 0 1px 0 #FFAE30,inset 0 -1px 0 #D67A00,inset 0 0 0 1px #E88200;
+  color:#fff;
+}
+.btn-orange:active{background:#FFC700;box-shadow:none}
+.btn-orange .btn-lbl{font-size:24px}
+
+/* 選択中の演算子（白背景・オレンジ文字） */
+.btn-orange.hl{background:#fff;box-shadow:none;color:#FE9100}
+.btn-orange.hl:active{background:rgba(255,255,255,0.75)}
+
+/* ── インジケータドット（±ボタン） ── */
+.ind-dot{
+  position:absolute;
+  width:5px;height:5px;border-radius:50%;
+  background:rgba(255,255,255,0.55);
+  left:50%;transform:translateX(-50%);
+  pointer-events:none;
+}
+.ind-dot.up  {top:28%}
+.ind-dot.down{top:62%}
+</style>
+</head>
+<body>
+
+<!-- 上部アイコン -->
+<div id="top-bar">
+  <div class="top-icon">
+    <!-- アナログ時計 SVG（毎秒更新） -->
+    <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round">
+      <circle cx="12" cy="12" r="9" stroke="white" stroke-opacity="0.7" stroke-width="1.5"/>
+      <line id="hh" x1="12" y1="12" x2="12" y2="7.5" stroke="white" stroke-opacity="0.85" stroke-width="1.6"/>
+      <line id="mh" x1="12" y1="12" x2="12" y2="5.5" stroke="white" stroke-opacity="0.85" stroke-width="1.0"/>
+      <circle cx="12" cy="12" r="1.2" fill="white" fill-opacity="0.85"/>
+    </svg>
+  </div>
+  <div class="top-icon">
+    <!-- 3×3 グリッド SVG -->
+    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3"    y="3"    width="4.5" height="4.5" rx="0.8"/>
+      <rect x="9.75" y="3"    width="4.5" height="4.5" rx="0.8"/>
+      <rect x="16.5" y="3"    width="4.5" height="4.5" rx="0.8"/>
+      <rect x="3"    y="9.75" width="4.5" height="4.5" rx="0.8"/>
+      <rect x="9.75" y="9.75" width="4.5" height="4.5" rx="0.8"/>
+      <rect x="16.5" y="9.75" width="4.5" height="4.5" rx="0.8"/>
+      <rect x="3"    y="16.5" width="4.5" height="4.5" rx="0.8"/>
+      <rect x="9.75" y="16.5" width="4.5" height="4.5" rx="0.8"/>
+      <rect x="16.5" y="16.5" width="4.5" height="4.5" rx="0.8"/>
+    </svg>
+  </div>
+</div>
+
+<!-- 数値表示 -->
+<div id="display">
+  <div id="hist-line"></div>
+  <div id="main-disp">0</div>
+</div>
+
+<!-- ボタングリッド -->
+<div id="btn-grid">
+  <!-- Row 1 -->
+  <button class="btn btn-gray"   data-a="back"   ><span class="btn-lbl">⌫</span></button>
+  <button class="btn btn-gray"   data-a="clear"  id="ac"><span class="btn-lbl">AC</span></button>
+  <button class="btn btn-gray"   data-a="pct"    ><span class="btn-lbl">%</span></button>
+  <button class="btn btn-orange" data-a="op:÷"   ><span class="btn-lbl">÷</span></button>
+  <!-- Row 2 -->
+  <button class="btn btn-dark"   data-a="d:7"><span class="btn-lbl">7</span></button>
+  <button class="btn btn-dark"   data-a="d:8"><span class="btn-lbl">8</span></button>
+  <button class="btn btn-dark"   data-a="d:9"><span class="btn-lbl">9</span></button>
+  <button class="btn btn-orange" data-a="op:×"><span class="btn-lbl">×</span></button>
+  <!-- Row 3 -->
+  <button class="btn btn-dark"   data-a="d:4"><span class="btn-lbl">4</span></button>
+  <button class="btn btn-dark"   data-a="d:5"><span class="btn-lbl">5</span></button>
+  <button class="btn btn-dark"   data-a="d:6"><span class="btn-lbl">6</span></button>
+  <button class="btn btn-orange" data-a="op:−"><span class="btn-lbl">−</span></button>
+  <!-- Row 4 -->
+  <button class="btn btn-dark"   data-a="d:1"><span class="btn-lbl">1</span></button>
+  <button class="btn btn-dark"   data-a="d:2"><span class="btn-lbl">2</span></button>
+  <button class="btn btn-dark"   data-a="d:3"><span class="btn-lbl">3</span></button>
+  <button class="btn btn-orange" data-a="op:+"><span class="btn-lbl">+</span></button>
+  <!-- Row 5 -->
+  <button class="btn btn-dark"   data-a="pm"  id="pm"><span class="btn-lbl">±</span></button>
+  <button class="btn btn-dark"   data-a="d:0"><span class="btn-lbl">0</span></button>
+  <button class="btn btn-dark"   data-a="dec" ><span class="btn-lbl">.</span></button>
+  <button class="btn btn-orange" data-a="eq"  ><span class="btn-lbl">=</span></button>
+</div>
+
+<script>
+'use strict';
+
+// ────────────────────────────────────────────
+// ボタンサイズをCSSカスタムプロパティで設定
+// SwiftUI: (vw - hPad*2 - gap*3) / 4  hPad=13 gap=12
+// ────────────────────────────────────────────
+document.documentElement.style.setProperty(
+  '--bs', 'calc((100vw - 26px - 36px) / 4)'
+);
+
+// ────────────────────────────────────────────
+// 設定（URLハッシュから読み込み）
+// ────────────────────────────────────────────
+function parseSettings() {
+  const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const b = (k, d) => p.has(k) ? p.get(k) !== '0' : d;
+  return {
+    isDateTime  : b('dt',   true),
+    collective  : b('coll', false),
+    equalsN     : Math.max(1, parseInt(p.get('eq') || '1')),
+    target      : parseFloat(p.get('target') || '100'),
+    offsetSec   : parseInt(p.get('off') || '0'),
+    fmtYear     : b('fY',   true),
+    fmtShortYear: b('fSY',  true),
+    fmtMonth    : b('fM',   true),
+    fmtDay      : b('fD',   true),
+    fmtHour     : b('fH',   true),
+    fmtMinute   : b('fMin', true),
+    use24h      : b('h24',  true),
+  };
+}
+const CFG = parseSettings();
+
+// ────────────────────────────────────────────
+// 電卓の状態
+// ────────────────────────────────────────────
+const S = {
+  disp    : '0',       // 表示文字列
+  firstVal: null,      // 第1オペランド（number | null）
+  op      : null,      // 保留中の演算子（文字列 | null）
+  sreset  : false,     // 次の数字入力で表示をリセット
+  liveExpr: '',        // 計算中の式（例: "5 + 3"）
+  histExpr: '',        // =後に小さく表示する式
+  eqCount : 0,         // =を押した累計回数（ACでリセット）
+  hlOp    : null,      // ハイライト中の演算子
+  // コレクティブモード
+  phase   : 'normal',  // 'normal' | 'afterFirst' | 'replacing'
+  frozen  : 0,         // フォースターゲット（固定）
+  total   : 0,         // 1回目=時点の集計値
+  collOp  : null,      // 不足分に使う演算子
+  revealed: 0,         // 不足分の公開済み桁数
+  indDir  : null,      // インジケーター方向: '+' | '−' | null
+};
+
+// ────────────────────────────────────────────
+// ターゲット値の計算
+// ────────────────────────────────────────────
+function getTarget() {
+  if (!CFG.isDateTime) return CFG.target;
+  const d = new Date(Date.now() + CFG.offsetSec * 1000);
+  let r = '';
+  if (CFG.fmtYear) {
+    const y = d.getFullYear();
+    r += CFG.fmtShortYear
+      ? String(y % 100).padStart(2, '0')
+      : String(y).padStart(4, '0');
+  }
+  if (CFG.fmtMonth)  r += String(d.getMonth() + 1).padStart(2, '0');
+  if (CFG.fmtDay)    r += String(d.getDate()).padStart(2, '0');
+  if (CFG.fmtHour) {
+    let h = d.getHours();
+    if (!CFG.use24h && h > 12) h -= 12;
+    r += String(h).padStart(2, '0');
+  }
+  if (CFG.fmtMinute) r += String(d.getMinutes()).padStart(2, '0');
+  return parseFloat(r) || 0;
+}
+
+// ────────────────────────────────────────────
+// 計算ユーティリティ
+// ────────────────────────────────────────────
+function compute(a, b, op) {
+  switch (op) {
+    case '+': return a + b;
+    case '−': return a - b;
+    case '×': return a * b;
+    case '÷': return b !== 0 ? a / b : 0;
+  }
+  return b;
+}
+
+function reverseCompute(target, first, op) {
+  switch (op) {
+    case '+': return target - first;
+    case '−': return first - target;
+    case '×': return first !== 0 ? target / first : target;
+    case '÷': return target !== 0 ? first / target : 0;
+  }
+  return target;
+}
+
+function fmtNum(v) {
+  if (!isFinite(v)) return 'エラー';
+  if (v === Math.round(v) && Math.abs(v) < 1e9) return String(Math.trunc(v));
+  return parseFloat(v.toPrecision(8)).toString();
+}
+
+function fmtHist(v) {
+  if (v === Math.round(v)) return String(Math.trunc(v));
+  return parseFloat(v.toPrecision(4)).toString();
+}
+
+function digitCount(v) {
+  return fmtNum(Math.abs(v)).replace(/[^0-9]/g, '').length;
+}
+
+// ────────────────────────────────────────────
+// 通常の計算（=を押したときの基本処理）
+// ────────────────────────────────────────────
+function computeEquals() {
+  const second = parseFloat(S.disp) || 0;
+  if (S.op !== null && S.firstVal !== null) {
+    const result = compute(S.firstVal, second, S.op);
+    return { result, second };
+  }
+  // 演算子なし：単独値
+  return { result: parseFloat(S.disp) || 0, second: parseFloat(S.disp) || 0 };
+}
+
+function afterEquals() {
+  S.op      = null;
+  S.hlOp    = null;
+  S.sreset  = true;
+  S.firstVal = null;
+}
+
+// ────────────────────────────────────────────
+// フォース処理（通常モード）
+// ────────────────────────────────────────────
+function applyForce() {
+  const target = getTarget();
+  const second = parseFloat(S.disp) || 0;
+
+  if (S.op !== null && S.firstVal !== null) {
+    const forced = reverseCompute(target, S.firstVal, S.op);
+    S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(forced);
+  } else {
+    S.histExpr = '';
+  }
+
+  S.disp = fmtNum(target);
+  afterEquals();
+}
+
+// ────────────────────────────────────────────
+// 入力ハンドラ
+// ────────────────────────────────────────────
+function inputDigit(d) {
+  // コレクティブ「replacing」フェーズ：不足分を1桁ずつ誘導
+  if (CFG.collective && S.phase === 'replacing') {
+    const shortfall = Math.abs(S.frozen - S.total);
+    const sf = fmtNum(shortfall).replace(/[^0-9]/g, '');
+    if (S.revealed >= sf.length) { S.hlOp = null; render(); return; }
+    S.disp = S.revealed === 0 ? sf[S.revealed] : S.disp + sf[S.revealed];
+    S.revealed++;
+    S.hlOp = null;
+    render(); return;
+  }
+
+  if (S.sreset) {
+    if (!S.op) {
+      // =後の新規入力：リセット
+      S.firstVal = null;
+      S.liveExpr = '';
+      S.histExpr = '';
+      S.eqCount  = 0;
+      S.phase    = 'normal';
+    }
+    S.disp = d;
+    S.sreset = false;
+  } else {
+    S.disp = S.disp === '0' ? d : (S.disp.length < 9 ? S.disp + d : S.disp);
+  }
+  S.hlOp = null;
+  render();
+}
+
+function inputOp(op) {
+  // コレクティブ「afterFirst」フェーズ：演算子受付
+  if (CFG.collective && S.phase === 'afterFirst') {
+    S.collOp  = op;
+    S.op      = op;
+    S.hlOp    = op;
+    S.sreset  = true;
+    S.phase   = 'replacing';
+    S.liveExpr += ' ' + op;
+    render(); return;
+  }
+
+  const cur = parseFloat(S.disp) || 0;
+
+  if (S.op !== null && !S.sreset) {
+    // 連続演算（チェーン計算）
+    const res = compute(S.firstVal, cur, S.op);
+    S.firstVal = res;
+    S.disp     = fmtNum(res);
+    S.liveExpr += ' ' + fmtHist(cur) + ' ' + op;
+  } else if (S.firstVal === null) {
+    // 最初の演算子
+    S.firstVal = cur;
+    S.liveExpr = fmtHist(cur) + ' ' + op;
+  } else if (S.sreset && S.op !== null) {
+    // 演算子の変更（連続押し）
+    const last = S.liveExpr.lastIndexOf(' ');
+    if (last >= 0) S.liveExpr = S.liveExpr.slice(0, last + 1) + op;
+  } else {
+    S.liveExpr = fmtHist(cur) + ' ' + op;
+  }
+
+  S.op     = op;
+  S.hlOp   = op;
+  S.sreset = true;
+  render();
+}
+
+function inputEquals() {
+  S.eqCount++;
+
+  if (CFG.collective) {
+    // ── コレクティブモード ──
+    switch (S.phase) {
+      case 'normal': {
+        const { result, second } = computeEquals();
+        if (S.eqCount < CFG.equalsN) {
+          // まだ発動しない：通常計算表示
+          if (S.op !== null && S.firstVal !== null) {
+            S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
+          } else { S.histExpr = ''; }
+          S.disp = fmtNum(result);
+          S.liveExpr = '';
+          afterEquals();
+          break;
+        }
+        // 発動：コレクティブ開始
+        S.disp     = fmtNum(result);
+        S.liveExpr = '';
+        S.frozen   = getTarget();
+        S.total    = result;
+        const shortfall = S.frozen - S.total;
+        S.indDir   = shortfall >= 0 ? '+' : '−';
+        S.revealed = 0;
+        S.histExpr = '';
+        S.phase    = 'afterFirst';
+        afterEquals();
+        break;
+      }
+      case 'afterFirst':
+        // 演算子待ち：無視
+        break;
+      case 'replacing': {
+        // 完了：フォースターゲットを表示
+        const sfVal = Math.abs(S.frozen - S.total);
+        if (S.collOp) {
+          const base = S.total;
+          S.histExpr = fmtHist(base) + ' ' + S.collOp + ' ' + fmtHist(sfVal);
+        } else { S.histExpr = ''; }
+        S.disp     = fmtNum(S.frozen);
+        S.liveExpr = '';
+        S.indDir   = null;
+        S.collOp   = null;
+        S.total    = 0;
+        S.frozen   = 0;
+        S.revealed = 0;
+        S.phase    = 'normal';
+        S.eqCount  = 0;
+        afterEquals();
+        break;
+      }
+    }
+  } else {
+    // ── 通常フォースモード ──
+    if (S.eqCount < CFG.equalsN) {
+      // まだ発動しない
+      const { result, second } = computeEquals();
+      if (S.op !== null && S.firstVal !== null) {
+        S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
+      } else { S.histExpr = ''; }
+      S.disp     = fmtNum(result);
+      S.liveExpr = '';
+      afterEquals();
+    } else {
+      // フォース発動
+      S.liveExpr = '';
+      S.eqCount  = 0;
+      applyForce();
+    }
+  }
+  render();
+}
+
+function inputDecimal() {
+  if (S.sreset) { S.disp = '0.'; S.sreset = false; render(); return; }
+  if (!S.disp.includes('.')) S.disp += '.';
+  render();
+}
+
+function inputBack() {
+  if (S.sreset) return;
+  S.disp = S.disp.length > 1 ? S.disp.slice(0, -1) : '0';
+  if (S.disp === '-') S.disp = '0';
+  render();
+}
+
+function inputPlusMinus() {
+  const v = parseFloat(S.disp);
+  if (!isNaN(v)) S.disp = fmtNum(v * -1);
+  render();
+}
+
+function inputPercent() {
+  const v = parseFloat(S.disp);
+  if (!isNaN(v)) S.disp = fmtNum(v / 100);
+  render();
+}
+
+function clear() {
+  Object.assign(S, {
+    disp:'0', firstVal:null, op:null, sreset:false,
+    liveExpr:'', histExpr:'', eqCount:0, hlOp:null,
+    phase:'normal', frozen:0, total:0, collOp:null,
+    revealed:0, indDir:null,
+  });
+  render();
+}
+
+// ────────────────────────────────────────────
+// 表示ロジック
+// ────────────────────────────────────────────
+function getLiveExpr() {
+  if (S.sreset && !S.op) return '';   // =後：liveなし
+  if (!S.liveExpr)       return '';   // 式なし
+  if (S.sreset)          return S.liveExpr;            // op直後
+  return S.liveExpr + ' ' + S.disp;  // 入力中
+}
+
+function getHistExpr() {
+  return (S.sreset && !S.op) ? S.histExpr : '';
+}
+
+function addCommas(s) {
+  const neg = s.startsWith('-');
+  const body = neg ? s.slice(1) : s;
+  const [int, dec] = body.split('.');
+  const fmt = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const res = dec !== undefined ? fmt + '.' + dec : fmt;
+  return neg ? '-' + res : res;
+}
+
+function formatDisplay(raw) {
+  if (raw.includes('.')) {
+    const [i, d] = raw.split('.');
+    return addCommas(i) + '.' + d;
+  }
+  return addCommas(raw);
+}
+
+// ────────────────────────────────────────────
+// レンダリング
+// ────────────────────────────────────────────
+const $hist = document.getElementById('hist-line');
+const $main = document.getElementById('main-disp');
+const $ac   = document.getElementById('ac');
+const $pm   = document.getElementById('pm');
+const $grid = document.getElementById('btn-grid');
+
+function render() {
+  const live = getLiveExpr();
+  const hist = getHistExpr();
+
+  // ── メイン表示 ──
+  if (live) {
+    $main.textContent = live;
+    const len = live.length;
+    $main.style.fontSize = (len <= 12 ? 80 : len <= 20 ? 66 : 54) + 'px';
+    $hist.style.display = 'none';
+  } else {
+    const txt = formatDisplay(S.disp);
+    $main.textContent = txt;
+    const dcount = txt.replace(/[^0-9]/g, '').length;
+    $main.style.fontSize = (dcount <= 8 ? 90 : dcount === 9 ? 82 : 74) + 'px';
+
+    if (hist) {
+      $hist.textContent = hist;
+      $hist.style.display = '';
+    } else {
+      $hist.style.display = 'none';
+    }
+  }
+
+  // ── AC / C ラベル ──
+  $ac.querySelector('.btn-lbl').textContent =
+    (S.disp === '0' && S.firstVal === null && !S.liveExpr) ? 'AC' : 'C';
+
+  // ── 演算子ハイライト ──
+  $grid.querySelectorAll('.btn-orange').forEach(b => {
+    const a = b.dataset.a;
+    b.classList.toggle('hl', a && a.startsWith('op:') && a.slice(3) === S.hlOp);
+  });
+
+  // ── インジケータドット（±ボタン）──
+  $pm.querySelector('.ind-dot')?.remove();
+  if (S.indDir) {
+    const dot = document.createElement('div');
+    dot.className = 'ind-dot ' + (S.indDir === '+' ? 'up' : 'down');
+    $pm.appendChild(dot);
+  }
+}
+
+// ────────────────────────────────────────────
+// イベント配線
+// ────────────────────────────────────────────
+$grid.addEventListener('pointerdown', e => {
+  const btn = e.target.closest('[data-a]');
+  if (!btn) return;
+  const a = btn.dataset.a;
+  if      (a.startsWith('d:'))  inputDigit(a.slice(2));
+  else if (a.startsWith('op:')) inputOp(a.slice(3));
+  else if (a === 'eq')          inputEquals();
+  else if (a === 'dec')         inputDecimal();
+  else if (a === 'back')        inputBack();
+  else if (a === 'clear')       clear();
+  else if (a === 'pm')          inputPlusMinus();
+  else if (a === 'pct')         inputPercent();
+});
+
+// ────────────────────────────────────────────
+// 時計アイコン（毎秒更新）
+// ────────────────────────────────────────────
+const $hh = document.getElementById('hh');
+const $mh = document.getElementById('mh');
+
+function updateClock() {
+  const now = new Date();
+  const h12 = now.getHours() % 12 + now.getMinutes() / 60;
+  const m   = now.getMinutes() + now.getSeconds() / 60;
+  const cx = 12, cy = 12;
+  function tip(angle, len) {
+    const r = (angle * Math.PI / 180) - Math.PI / 2;
+    return [cx + Math.cos(r) * len, cy + Math.sin(r) * len];
+  }
+  const [hx, hy] = tip(h12 * 30, 4.2);
+  const [mx, my] = tip(m * 6, 6.3);
+  $hh.setAttribute('x2', hx.toFixed(2)); $hh.setAttribute('y2', hy.toFixed(2));
+  $mh.setAttribute('x2', mx.toFixed(2)); $mh.setAttribute('y2', my.toFixed(2));
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ────────────────────────────────────────────
+// 初期描画
+// ────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
