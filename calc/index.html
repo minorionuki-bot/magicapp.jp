@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v9</title>
+<title>Magic Calc v10</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -217,7 +217,7 @@ document.documentElement.style.setProperty(
 // ────────────────────────────────────────────
 function parseSettings() {
   const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-  const b = (k, d) => p.has(k) ? p.get(k) !== '0' : d;
+  const b = (k, d) => p.has(k) ? (p.get(k) !== '0' && p.get(k) !== 'false' && p.get(k) !== '') : d;
   return {
     isDateTime  : b('dt',   true),
     collective  : b('coll', false),
@@ -345,11 +345,11 @@ function applyForce() {
   const target = getTarget();
   const second = parseFloat(S.disp) || 0;
 
+  // 打ったままの式を上に表示（逆算ではなく入力値をそのまま）
   if (S.op !== null && S.firstVal !== null) {
-    const forced = reverseCompute(target, S.firstVal, S.op);
-    S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(forced);
+    S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
   } else {
-    S.histExpr = '';
+    S.histExpr = fmtHist(second);
   }
 
   S.disp = fmtNum(target);
@@ -592,7 +592,7 @@ function render() {
     const txt = formatDisplay(S.disp);
     $main.textContent = txt;
     const dcount = txt.replace(/[^0-9]/g, '').length;
-    $main.style.fontSize = (dcount <= 6 ? 74 : dcount <= 8 ? 62 : dcount <= 10 ? 52 : 42) + 'px';
+    $main.style.fontSize = (dcount <= 11 ? 74 : dcount === 12 ? 70 : dcount === 13 ? 66 : 62) + 'px';
 
     if (hist) {
       $hist.textContent = hist;
