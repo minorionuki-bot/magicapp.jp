@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v13</title>
+<title>Magic Calc v14</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -99,7 +99,7 @@ html,body{
   color:#fff;
 }
 .btn-dark:active{background:#737373;box-shadow:none}
-.btn-dark .btn-lbl{font-size:42px}
+.btn-dark .btn-lbl{font-size:38px}
 
 /* ── グレーボタン（AC %  ⌫） ── */
 .btn-gray{
@@ -108,7 +108,7 @@ html,body{
   color:#fff;
 }
 .btn-gray:active{background:#888;box-shadow:none}
-.btn-gray .btn-lbl{font-size:20px}
+.btn-gray .btn-lbl{font-size:38px}
 
 /* ── オレンジボタン（演算子） ── */
 .btn-orange{
@@ -117,7 +117,7 @@ html,body{
   color:#fff;
 }
 .btn-orange:active{background:#FFC700;box-shadow:none}
-.btn-orange .btn-lbl{font-size:24px}
+.btn-orange .btn-lbl{font-size:38px}
 
 /* 選択中の演算子（白背景・オレンジ文字） */
 .btn-orange.hl{background:#fff;box-shadow:none;color:#FE9100}
@@ -637,8 +637,10 @@ function render() {
     $main.textContent = live;
     const len = live.length;
     $main.style.fontSize = (len <= 12 ? 80 : len <= 20 ? 66 : 54) + 'px';
+    $main.style.wordSpacing = '-0.15em'; // 演算子と数字の間を詰める
     $hist.style.display = 'none';
   } else {
+    $main.style.wordSpacing = '';
     const txt = formatDisplay(S.disp);
     $main.textContent = txt;
     const dcount = txt.replace(/[^0-9]/g, '').length;
