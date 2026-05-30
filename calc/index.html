@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v10</title>
+<title>Magic Calc v11</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -216,21 +216,43 @@ document.documentElement.style.setProperty(
 // 設定（URLハッシュから読み込み）
 // ────────────────────────────────────────────
 function parseSettings() {
-  const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const hash = location.hash.replace(/^#/, '');
+  const p = new URLSearchParams(hash);
   const b = (k, d) => p.has(k) ? (p.get(k) !== '0' && p.get(k) !== 'false' && p.get(k) !== '') : d;
+
+  // URLハッシュに設定キーがあればそれを使い、localStorageに保存する
+  const KEYS = ['dt','coll','eq','target','off','fY','fSY','fM','fD','fH','fMin','h24'];
+  if (KEYS.some(k => p.has(k))) {
+    const cfg = {
+      isDateTime  : b('dt',   true),
+      collective  : b('coll', false),
+      equalsN     : Math.max(1, parseInt(p.get('eq') || '1')),
+      target      : parseFloat(p.get('target') || '100'),
+      offsetSec   : parseInt(p.get('off') || '0'),
+      fmtYear     : b('fY',   true),
+      fmtShortYear: b('fSY',  true),
+      fmtMonth    : b('fM',   true),
+      fmtDay      : b('fD',   true),
+      fmtHour     : b('fH',   true),
+      fmtMinute   : b('fMin', true),
+      use24h      : b('h24',  true),
+    };
+    try { localStorage.setItem('magic_cfg', JSON.stringify(cfg)); } catch(e) {}
+    return cfg;
+  }
+
+  // localStorageに保存済み設定があれば使う
+  try {
+    const saved = localStorage.getItem('magic_cfg');
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+
+  // デフォルト（月日のみ）
   return {
-    isDateTime  : b('dt',   true),
-    collective  : b('coll', false),
-    equalsN     : Math.max(1, parseInt(p.get('eq') || '1')),
-    target      : parseFloat(p.get('target') || '100'),
-    offsetSec   : parseInt(p.get('off') || '0'),
-    fmtYear     : b('fY',   true),
-    fmtShortYear: b('fSY',  true),
-    fmtMonth    : b('fM',   true),
-    fmtDay      : b('fD',   true),
-    fmtHour     : b('fH',   true),
-    fmtMinute   : b('fMin', true),
-    use24h      : b('h24',  true),
+    isDateTime: true, collective: false, equalsN: 1,
+    target: 100, offsetSec: 0,
+    fmtYear: false, fmtShortYear: true, fmtMonth: true, fmtDay: true,
+    fmtHour: false, fmtMinute: false, use24h: true,
   };
 }
 const CFG = parseSettings();
@@ -248,9 +270,10 @@ const S = {
   eqCount : 0,         // =を押した累計回数（ACでリセット）
   hlOp    : null,      // ハイライト中の演算子
   // コレクティブモード
-  phase   : 'normal',  // 'normal' | 'afterFirst' | 'replacing'
-  frozen  : 0,         // フォースターゲット（固定）
-  total   : 0,         // 1回目=時点の集計値
+  phase     : 'normal',  // 'normal' | 'afterFirst' | 'replacing'
+  frozen    : 0,         // フォースターゲット（数値）
+  frozenStr : '',        // フォースターゲット（先頭ゼロ付き表示文字列）
+  total     : 0,         // 1回目=時点の集計値
   collOp  : null,      // 不足分に使う演算子
   revealed: 0,         // 不足分の公開済み桁数
   indDir  : null,      // インジケーター方向: '+' | '−' | null
@@ -259,8 +282,10 @@ const S = {
 // ────────────────────────────────────────────
 // ターゲット値の計算
 // ────────────────────────────────────────────
-function getTarget() {
-  if (!CFG.isDateTime) return CFG.target;
+
+// 先頭ゼロを保持した表示用文字列を返す（例: 月日=「0530」）
+function getTargetStr() {
+  if (!CFG.isDateTime) return fmtNum(CFG.target);
   const d = new Date(Date.now() + CFG.offsetSec * 1000);
   let r = '';
   if (CFG.fmtYear) {
@@ -277,7 +302,13 @@ function getTarget() {
     r += String(h).padStart(2, '0');
   }
   if (CFG.fmtMinute) r += String(d.getMinutes()).padStart(2, '0');
-  return parseFloat(r) || 0;
+  return r || '0';
+}
+
+// 計算に使う数値を返す
+function getTarget() {
+  if (!CFG.isDateTime) return CFG.target;
+  return parseFloat(getTargetStr()) || 0;
 }
 
 // ────────────────────────────────────────────
@@ -342,7 +373,6 @@ function afterEquals() {
 // フォース処理（通常モード）
 // ────────────────────────────────────────────
 function applyForce() {
-  const target = getTarget();
   const second = parseFloat(S.disp) || 0;
 
   // 打ったままの式を上に表示（逆算ではなく入力値をそのまま）
@@ -352,7 +382,7 @@ function applyForce() {
     S.histExpr = fmtHist(second);
   }
 
-  S.disp = fmtNum(target);
+  S.disp = getTargetStr(); // 先頭ゼロを保持した文字列で表示
   afterEquals();
 }
 
@@ -447,10 +477,11 @@ function inputEquals() {
           break;
         }
         // 発動：コレクティブ開始
-        S.disp     = fmtNum(result);
-        S.liveExpr = '';
-        S.frozen   = getTarget();
-        S.total    = result;
+        S.disp      = fmtNum(result);
+        S.liveExpr  = '';
+        S.frozenStr = getTargetStr();
+        S.frozen    = parseFloat(S.frozenStr) || 0;
+        S.total     = result;
         const shortfall = S.frozen - S.total;
         S.indDir   = shortfall >= 0 ? '+' : '−';
         S.revealed = 0;
@@ -469,15 +500,16 @@ function inputEquals() {
           const base = S.total;
           S.histExpr = fmtHist(base) + ' ' + S.collOp + ' ' + fmtHist(sfVal);
         } else { S.histExpr = ''; }
-        S.disp     = fmtNum(S.frozen);
-        S.liveExpr = '';
-        S.indDir   = null;
-        S.collOp   = null;
-        S.total    = 0;
-        S.frozen   = 0;
-        S.revealed = 0;
-        S.phase    = 'normal';
-        S.eqCount  = 0;
+        S.disp      = S.frozenStr || fmtNum(S.frozen); // 先頭ゼロ保持
+        S.liveExpr  = '';
+        S.indDir    = null;
+        S.collOp    = null;
+        S.total     = 0;
+        S.frozen    = 0;
+        S.frozenStr = '';
+        S.revealed  = 0;
+        S.phase     = 'normal';
+        S.eqCount   = 0;
         afterEquals();
         break;
       }
@@ -532,7 +564,7 @@ function clear() {
   Object.assign(S, {
     disp:'0', firstVal:null, op:null, sreset:false,
     liveExpr:'', histExpr:'', eqCount:0, hlOp:null,
-    phase:'normal', frozen:0, total:0, collOp:null,
+    phase:'normal', frozen:0, frozenStr:'', total:0, collOp:null,
     revealed:0, indDir:null,
   });
   render();
@@ -562,6 +594,7 @@ function addCommas(s) {
 }
 
 function formatDisplay(raw) {
+  if (CFG.isDateTime) return raw; // 日時モードはカンマなし・先頭ゼロ保持
   if (raw.includes('.')) {
     const [i, d] = raw.split('.');
     return addCommas(i) + '.' + d;
