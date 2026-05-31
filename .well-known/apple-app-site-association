@@ -1,16 +1,6 @@
 {
   "applinks": {
-    "details": [
-      {
-        "appIDs": ["V9FTG48Z3H.com.minori.magiccalc.MagicCalc"],
-        "components": [
-          {
-            "/": "/clip*",
-            "comment": "Matches App Clip invocation URL"
-          }
-        ]
-      }
-    ]
+    "details": []
   },
   "appclips": {
     "apps": ["V9FTG48Z3H.com.minori.magiccalc.MagicCalc.Clip"]
