@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v19</title>
+<title>Magic Calc v20</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -285,6 +285,9 @@ function parseSettings() {
 }
 const CFG = parseSettings();
 
+// アクティブモード（タップで切り替え可能。CFGの初期値を引き継ぐ）
+let activeIsDateTime = CFG.isDateTime;
+
 // ────────────────────────────────────────────
 // 電卓の状態
 // ────────────────────────────────────────────
@@ -314,7 +317,7 @@ const S = {
 
 // 先頭ゼロを保持した表示用文字列を返す（例: 月日=「0530」）
 function getTargetStr() {
-  if (!CFG.isDateTime) return fmtNum(CFG.target);
+  if (!activeIsDateTime) return fmtNum(CFG.target);
   const d = new Date(Date.now() + CFG.offsetSec * 1000);
   let r = '';
   if (CFG.fmtYear) {
@@ -336,7 +339,7 @@ function getTargetStr() {
 
 // 計算に使う数値を返す
 function getTarget() {
-  if (!CFG.isDateTime) return CFG.target;
+  if (!activeIsDateTime) return CFG.target;
   return parseFloat(getTargetStr()) || 0;
 }
 
@@ -715,27 +718,34 @@ $grid.addEventListener('pointerdown', e => {
 });
 
 // ────────────────────────────────────────────
-// 時計アイコン（毎秒更新）
+// 時計アイコン（モードインジケーター）
+// 日時モード: 3時方向、数字モード: 9時方向
 // ────────────────────────────────────────────
 const $hh = document.getElementById('hh');
 const $mh = document.getElementById('mh');
 
-function updateClock() {
-  const now = new Date();
-  const h12 = now.getHours() % 12 + now.getMinutes() / 60;
-  const m   = now.getMinutes() + now.getSeconds() / 60;
+function setClockMode(isDateTime) {
   const cx = 12, cy = 12;
-  function tip(angle, len) {
-    const r = (angle * Math.PI / 180) - Math.PI / 2;
-    return [cx + Math.cos(r) * len, cy + Math.sin(r) * len];
-  }
-  const [hx, hy] = tip(h12 * 30, 4.2);
-  const [mx, my] = tip(m * 6, 6.3);
-  $hh.setAttribute('x2', hx.toFixed(2)); $hh.setAttribute('y2', hy.toFixed(2));
-  $mh.setAttribute('x2', mx.toFixed(2)); $mh.setAttribute('y2', my.toFixed(2));
+  // 時針: 日時=3時(90°)、数字=9時(270°)
+  const hDeg = isDateTime ? 90 : 270;
+  const hr = (hDeg * Math.PI / 180) - Math.PI / 2;
+  $hh.setAttribute('x2', (cx + Math.cos(hr) * 4.2).toFixed(2));
+  $hh.setAttribute('y2', (cy + Math.sin(hr) * 4.2).toFixed(2));
+  // 分針: 常に12時方向（上向き）
+  $mh.setAttribute('x2', cx.toFixed(2));
+  $mh.setAttribute('y2', (cy - 6.3).toFixed(2));
 }
-updateClock();
-setInterval(updateClock, 1000);
+setClockMode(activeIsDateTime);
+
+// 時計タップでモード切り替え（アイドル状態のみ）
+const $clockBtn = document.querySelector('#top-bar .top-icon');
+$clockBtn.addEventListener('click', () => {
+  const isIdle = S.disp === '0' && S.firstVal === null && !S.liveExpr && S.phase === 'normal';
+  if (!isIdle) return;
+  activeIsDateTime = !activeIsDateTime;
+  setClockMode(activeIsDateTime);
+  clear();
+});
 
 // ────────────────────────────────────────────
 // 初期描画
@@ -751,6 +761,8 @@ render();
   const s = await fetchSupabaseSettings(uuid);
   if (!s) return;
   Object.assign(CFG, s);
+  activeIsDateTime = s.isDateTime ?? CFG.isDateTime;
+  setClockMode(activeIsDateTime);
   try { localStorage.setItem('magic_cfg', JSON.stringify(s)); } catch(e) {}
   clear(); // 新しい設定で電卓をリセット
 })();
