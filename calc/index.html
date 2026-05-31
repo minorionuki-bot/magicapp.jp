@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v16</title>
+<title>Magic Calc v17</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -68,8 +68,12 @@ html,body{
   font-weight:300;color:#fff;
   white-space:nowrap;
   text-align:right;width:100%;
-  line-height:1;overflow:hidden;
+  line-height:1;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
 }
+#main-disp::-webkit-scrollbar{display:none}
 
 /* ── ボタングリッド ── */
 #btn-grid{
@@ -648,16 +652,14 @@ function render() {
   // ── メイン表示 ──
   if (live) {
     $main.textContent = live;
-    const len = live.length;
-    $main.style.fontSize = (len <= 12 ? 80 : len <= 20 ? 66 : 54) + 'px';
-    $main.style.wordSpacing = '-0.15em'; // 演算子と数字の間を詰める
+    $main.style.fontSize = '74px';
+    $main.style.wordSpacing = '-0.15em';
     $hist.style.display = 'none';
   } else {
     $main.style.wordSpacing = '';
     const txt = formatDisplay(S.disp);
     $main.textContent = txt;
-    const dcount = txt.replace(/[^0-9]/g, '').length;
-    $main.style.fontSize = (dcount <= 11 ? 74 : dcount === 12 ? 70 : dcount === 13 ? 66 : 62) + 'px';
+    $main.style.fontSize = '74px';
 
     if (hist) {
       $hist.textContent = hist;
@@ -666,6 +668,8 @@ function render() {
       $hist.style.display = 'none';
     }
   }
+  // 右端（最新の数字）が常に見えるようにスクロール
+  requestAnimationFrame(() => { $main.scrollLeft = $main.scrollWidth; });
 
   // ── AC / C ラベル ──
   $ac.querySelector('.btn-lbl').textContent =
