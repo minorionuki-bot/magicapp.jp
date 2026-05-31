@@ -281,6 +281,8 @@ function parseSettings() {
     target: 100, offsetSec: 0,
     fmtYear: false, fmtShortYear: true, fmtMonth: true, fmtDay: true,
     fmtHour: false, fmtMinute: false, use24h: true,
+    numberEnabled: true,   numberCollective: false, numberEqualsN: 1,
+    datetimeEnabled: true, datetimeCollective: false, datetimeEqualsN: 1,
   };
 }
 const CFG = parseSettings();
@@ -495,12 +497,20 @@ function inputOp(op) {
 function inputEquals() {
   S.eqCount++;
 
-  if (CFG.collective) {
+  // アクティブモードに応じてcollective/equalsNを切り替え
+  const activeCollective = activeIsDateTime
+    ? (CFG.datetimeCollective ?? CFG.collective ?? false)
+    : (CFG.numberCollective   ?? CFG.collective ?? false);
+  const activeEqualsN = activeIsDateTime
+    ? (CFG.datetimeEqualsN ?? CFG.equalsN ?? 1)
+    : (CFG.numberEqualsN   ?? CFG.equalsN ?? 1);
+
+  if (activeCollective) {
     // ── コレクティブモード ──
     switch (S.phase) {
       case 'normal': {
         const { result, second } = computeEquals();
-        if (S.eqCount < CFG.equalsN) {
+        if (S.eqCount < activeEqualsN) {
           // まだ発動しない：通常計算表示
           if (S.op !== null && S.firstVal !== null) {
             S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
@@ -551,7 +561,7 @@ function inputEquals() {
     }
   } else {
     // ── 通常フォースモード ──
-    if (S.eqCount < CFG.equalsN) {
+    if (S.eqCount < activeEqualsN) {
       // まだ発動しない
       const { result, second } = computeEquals();
       if (S.op !== null && S.firstVal !== null) {
@@ -702,7 +712,10 @@ $grid.addEventListener('pointerdown', e => {
   const a = btn.dataset.a;
 
   // コレクティブ replacing フェーズ中は = 以外どのボタンでも次の桁を進める
-  if (CFG.collective && S.phase === 'replacing' && a !== 'eq') {
+  const _activeCollective = activeIsDateTime
+    ? (CFG.datetimeCollective ?? CFG.collective ?? false)
+    : (CFG.numberCollective   ?? CFG.collective ?? false);
+  if (_activeCollective && S.phase === 'replacing' && a !== 'eq') {
     inputDigit('0');
     return;
   }
@@ -737,12 +750,15 @@ function setClockMode(isDateTime) {
 }
 setClockMode(activeIsDateTime);
 
-// 時計タップでモード切り替え（アイドル状態のみ）
+// 時計タップでモード切り替え（アイドル状態のみ、切り替え先が有効な場合のみ）
 const $clockBtn = document.querySelector('#top-bar .top-icon');
 $clockBtn.addEventListener('click', () => {
   const isIdle = S.disp === '0' && S.firstVal === null && !S.liveExpr && S.phase === 'normal';
   if (!isIdle) return;
-  activeIsDateTime = !activeIsDateTime;
+  const newMode = !activeIsDateTime;
+  if (newMode  && CFG.datetimeEnabled === false) return;
+  if (!newMode && CFG.numberEnabled   === false) return;
+  activeIsDateTime = newMode;
   setClockMode(activeIsDateTime);
   clear();
 });
