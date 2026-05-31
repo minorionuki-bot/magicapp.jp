@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v15</title>
+<title>Magic Calc v16</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -285,13 +285,14 @@ const CFG = parseSettings();
 // 電卓の状態
 // ────────────────────────────────────────────
 const S = {
-  disp    : '0',       // 表示文字列
-  firstVal: null,      // 第1オペランド（number | null）
-  op      : null,      // 保留中の演算子（文字列 | null）
-  sreset  : false,     // 次の数字入力で表示をリセット
-  liveExpr: '',        // 計算中の式（例: "5 + 3"）
-  histExpr: '',        // =後に小さく表示する式
-  eqCount : 0,         // =を押した累計回数（ACでリセット）
+  disp         : '0',    // 表示文字列
+  firstVal     : null,   // 第1オペランド（number | null）
+  op           : null,   // 保留中の演算子（文字列 | null）
+  sreset       : false,  // 次の数字入力で表示をリセット
+  dispIsTarget : false,  // フォースターゲット表示中（コンマなし）
+  liveExpr     : '',     // 計算中の式（例: "5 + 3"）
+  histExpr     : '',     // =後に小さく表示する式
+  eqCount      : 0,      // =を押した累計回数（ACでリセット）
   hlOp    : null,      // ハイライト中の演算子
   // コレクティブモード
   phase     : 'normal',  // 'normal' | 'afterFirst' | 'replacing'
@@ -406,7 +407,8 @@ function applyForce() {
     S.histExpr = fmtHist(second);
   }
 
-  S.disp = getTargetStr(); // 先頭ゼロを保持した文字列で表示
+  S.disp         = getTargetStr();
+  S.dispIsTarget = true; // フォースターゲット表示中
   afterEquals();
 }
 
@@ -429,11 +431,12 @@ function inputDigit(d) {
   if (S.sreset) {
     if (!S.op) {
       // =後の新規入力：リセット
-      S.firstVal = null;
-      S.liveExpr = '';
-      S.histExpr = '';
-      S.eqCount  = 0;
-      S.phase    = 'normal';
+      S.firstVal     = null;
+      S.liveExpr     = '';
+      S.histExpr     = '';
+      S.eqCount      = 0;
+      S.phase        = 'normal';
+      S.dispIsTarget = false;
     }
     S.disp = d;
     S.sreset = false;
@@ -524,7 +527,8 @@ function inputEquals() {
           const base = S.total;
           S.histExpr = fmtHist(base) + ' ' + S.collOp + ' ' + fmtHist(sfVal);
         } else { S.histExpr = ''; }
-        S.disp      = S.frozenStr || fmtNum(S.frozen); // 先頭ゼロ保持
+        S.disp         = S.frozenStr || fmtNum(S.frozen);
+        S.dispIsTarget = true;
         S.liveExpr  = '';
         S.indDir    = null;
         S.collOp    = null;
@@ -586,7 +590,7 @@ function inputPercent() {
 
 function clear() {
   Object.assign(S, {
-    disp:'0', firstVal:null, op:null, sreset:false,
+    disp:'0', firstVal:null, op:null, sreset:false, dispIsTarget:false,
     liveExpr:'', histExpr:'', eqCount:0, hlOp:null,
     phase:'normal', frozen:0, frozenStr:'', total:0, collOp:null,
     revealed:0, indDir:null,
@@ -618,7 +622,9 @@ function addCommas(s) {
 }
 
 function formatDisplay(raw) {
-  if (CFG.isDateTime) return raw; // 日時モードはカンマなし・先頭ゼロ保持
+  // フォースターゲット表示中・先頭ゼロがある場合はコンマなしで返す
+  if (S.dispIsTarget) return raw;
+  if (raw.length > 1 && raw[0] === '0' && raw[1] !== '.') return raw;
   if (raw.includes('.')) {
     const [i, d] = raw.split('.');
     return addCommas(i) + '.' + d;
