@@ -318,6 +318,27 @@ const S = {
 // ────────────────────────────────────────────
 
 // 先頭ゼロを保持した表示用文字列を返す（例: 月日=「0530」）
+// アクティブモードのコレクティブ設定を返す
+// 新フォーマット(numberCollective/datetimeCollective)が明示的にtrueの場合のみ採用し、
+// それ以外（false / 未設定）は旧フォーマット(collective)を参照する
+function getActiveCollective() {
+  if (activeIsDateTime) {
+    if (CFG.datetimeCollective === true) return true;
+    return CFG.collective ?? false;
+  } else {
+    if (CFG.numberCollective === true) return true;
+    return CFG.collective ?? false;
+  }
+}
+
+function getActiveEqualsN() {
+  if (activeIsDateTime) {
+    return ('datetimeEqualsN' in CFG) ? (CFG.datetimeEqualsN ?? 1) : (CFG.equalsN ?? 1);
+  } else {
+    return ('numberEqualsN'   in CFG) ? (CFG.numberEqualsN   ?? 1) : (CFG.equalsN ?? 1);
+  }
+}
+
 function getTargetStr() {
   if (!activeIsDateTime) return fmtNum(CFG.target);
   const d = new Date(Date.now() + CFG.offsetSec * 1000);
@@ -370,7 +391,7 @@ function reverseCompute(target, first, op) {
 
 function fmtNum(v) {
   if (!isFinite(v)) return 'エラー';
-  if (v === Math.round(v) && Math.abs(v) < 1e9) return String(Math.trunc(v));
+  if (v === Math.round(v) && Math.abs(v) < 1e15) return String(Math.trunc(v));
   return parseFloat(v.toPrecision(8)).toString();
 }
 
@@ -426,7 +447,7 @@ function applyForce() {
 // ────────────────────────────────────────────
 function inputDigit(d) {
   // コレクティブ「replacing」フェーズ：不足分を1桁ずつ誘導
-  if (CFG.collective && S.phase === 'replacing') {
+  if (getActiveCollective() && S.phase === 'replacing') {
     const shortfall = Math.abs(S.frozen - S.total);
     const sf = fmtNum(shortfall).replace(/[^0-9]/g, '');
     if (S.revealed >= sf.length) { S.hlOp = null; render(); return; }
@@ -438,13 +459,12 @@ function inputDigit(d) {
   }
 
   if (S.sreset) {
-    if (!S.op) {
-      // =後の新規入力：リセット
+    if (!S.op && S.phase === 'normal') {
+      // =後の新規入力：リセット（collectiveのafterFirst/replacingフェーズ中は維持）
       S.firstVal     = null;
       S.liveExpr     = '';
       S.histExpr     = '';
       S.eqCount      = 0;
-      S.phase        = 'normal';
       S.dispIsTarget = false;
     }
     S.disp = d;
@@ -458,7 +478,7 @@ function inputDigit(d) {
 
 function inputOp(op) {
   // コレクティブ「afterFirst」フェーズ：演算子受付
-  if (CFG.collective && S.phase === 'afterFirst') {
+  if (getActiveCollective() && S.phase === 'afterFirst') {
     S.collOp  = op;
     S.op      = op;
     S.hlOp    = op;
@@ -497,13 +517,8 @@ function inputOp(op) {
 function inputEquals() {
   S.eqCount++;
 
-  // アクティブモードに応じてcollective/equalsNを切り替え
-  const activeCollective = activeIsDateTime
-    ? (CFG.datetimeCollective ?? CFG.collective ?? false)
-    : (CFG.numberCollective   ?? CFG.collective ?? false);
-  const activeEqualsN = activeIsDateTime
-    ? (CFG.datetimeEqualsN ?? CFG.equalsN ?? 1)
-    : (CFG.numberEqualsN   ?? CFG.equalsN ?? 1);
+  const activeCollective = getActiveCollective();
+  const activeEqualsN    = getActiveEqualsN();
 
   if (activeCollective) {
     // ── コレクティブモード ──
@@ -663,6 +678,12 @@ function render() {
   const hist = getHistExpr();
 
   // ── メイン表示 ──
+  const mainFontSize = (s) => {
+    const digits = s.replace(/[^0-9]/g, '').length;
+    if (digits <= 9)  return '74px';
+    if (digits <= 11) return '56px';
+    return '44px';
+  };
   if (live) {
     $main.textContent = live;
     $main.style.fontSize = '74px';
@@ -672,7 +693,7 @@ function render() {
     $main.style.wordSpacing = '';
     const txt = formatDisplay(S.disp);
     $main.textContent = txt;
-    $main.style.fontSize = '74px';
+    $main.style.fontSize = mainFontSize(txt);
 
     if (hist) {
       $hist.textContent = hist;
@@ -712,10 +733,7 @@ $grid.addEventListener('pointerdown', e => {
   const a = btn.dataset.a;
 
   // コレクティブ replacing フェーズ中は = 以外どのボタンでも次の桁を進める
-  const _activeCollective = activeIsDateTime
-    ? (CFG.datetimeCollective ?? CFG.collective ?? false)
-    : (CFG.numberCollective   ?? CFG.collective ?? false);
-  if (_activeCollective && S.phase === 'replacing' && a !== 'eq') {
+  if (getActiveCollective() && S.phase === 'replacing' && a !== 'eq') {
     inputDigit('0');
     return;
   }
@@ -777,9 +795,15 @@ render();
   const s = await fetchSupabaseSettings(uuid);
   if (!s) return;
   Object.assign(CFG, s);
+  // 旧フォーマット(collective)と新フォーマット(numberCollective/datetimeCollective)の互換
+  // Supabaseデータに per-mode キーがない場合は legacy collective にフォールバック
+  if (!('numberCollective'   in s)) CFG.numberCollective   = s.collective ?? false;
+  if (!('datetimeCollective' in s)) CFG.datetimeCollective = s.collective ?? false;
+  if (!('numberEqualsN'      in s)) CFG.numberEqualsN      = s.equalsN    ?? 1;
+  if (!('datetimeEqualsN'    in s)) CFG.datetimeEqualsN    = s.equalsN    ?? 1;
   activeIsDateTime = s.isDateTime ?? CFG.isDateTime;
   setClockMode(activeIsDateTime);
-  try { localStorage.setItem('magic_cfg', JSON.stringify(s)); } catch(e) {}
+  try { localStorage.setItem('magic_cfg', JSON.stringify(CFG)); } catch(e) {}
   clear(); // 新しい設定で電卓をリセット
 })();
 </script>
