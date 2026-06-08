@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v21</title>
+<title>Magic Calc v22</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -655,10 +655,7 @@ function addCommas(s) {
 }
 
 function formatDisplay(raw) {
-  // 日時フォースターゲット表示中はコンマなし（日付文字列が崩れるため）
-  if (S.dispIsTarget && activeIsDateTime) return raw;
   // 先頭ゼロがある場合はコンマなし
-
   if (raw.length > 1 && raw[0] === '0' && raw[1] !== '.') return raw;
   if (raw.includes('.')) {
     const [i, d] = raw.split('.');
