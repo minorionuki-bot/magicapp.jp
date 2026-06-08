@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v22</title>
+<title>Magic Calc v23</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -122,7 +122,7 @@ html,body{
   color:#fff;
 }
 .btn-orange:active{background:#FFC700;box-shadow:none}
-.btn-orange .btn-lbl{font-size:38px}
+.btn-orange .btn-lbl{font-size:43px}
 
 /* 選択中の演算子（白背景・オレンジ文字） */
 .btn-orange.hl{background:#fff;box-shadow:none;color:#FE9100}
@@ -680,13 +680,13 @@ function render() {
   // ── メイン表示 ──
   const mainFontSize = (s) => {
     const digits = s.replace(/[^0-9]/g, '').length;
-    if (digits <= 9)  return '74px';
-    if (digits <= 11) return '56px';
-    return '44px';
+    if (digits <= 9)  return '70px';
+    if (digits <= 11) return '64px';
+    return '58px';
   };
   if (live) {
     $main.textContent = live;
-    $main.style.fontSize = '74px';
+    $main.style.fontSize = '70px';
     $main.style.wordSpacing = '-0.15em';
     $hist.style.display = 'none';
   } else {
