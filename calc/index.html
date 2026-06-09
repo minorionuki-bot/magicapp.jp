@@ -432,13 +432,14 @@ function afterEquals() {
 function applyForce() {
   const second = parseFloat(S.disp) || 0;
 
-  // 打ったままの式を上に表示（逆算ではなく入力値をそのまま）
-  if (S.op !== null && S.firstVal !== null) {
-    S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
-  } else {
+  // S.liveExpr に入力通りの式が積み上がっているのでそれを使う
+  // liveExprがない場合（equalsNの2回目以降など）は既存のhistExprを維持
+  if (S.liveExpr) {
+    S.histExpr = S.liveExpr + ' ' + fmtHist(second);
+  } else if (!S.histExpr) {
     S.histExpr = fmtHist(second);
   }
-
+  S.liveExpr     = '';
   S.disp         = getTargetStr();
   S.dispIsTarget = true; // フォースターゲット表示中
   afterEquals();
@@ -541,9 +542,7 @@ function inputEquals() {
         const { result, second } = computeEquals();
         if (S.eqCount < activeEqualsN) {
           // まだ発動しない：通常計算表示
-          if (S.op !== null && S.firstVal !== null) {
-            S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
-          } else { S.histExpr = ''; }
+          S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
           S.disp = fmtNum(result);
           S.liveExpr = '';
           afterEquals();
@@ -593,16 +592,13 @@ function inputEquals() {
     if (S.eqCount < activeEqualsN) {
       // まだ発動しない
       const { result, second } = computeEquals();
-      if (S.op !== null && S.firstVal !== null) {
-        S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
-      } else { S.histExpr = ''; }
+      S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
       S.disp     = fmtNum(result);
       S.liveExpr = '';
       afterEquals();
     } else {
       // フォース発動
-      S.liveExpr = '';
-      S.eqCount  = 0;
+      S.eqCount = 0;
       applyForce();
     }
   }
