@@ -522,9 +522,8 @@ function inputEquals() {
   // 通常電卓モード（6時）: フォースなし、純粋な計算のみ
   if (normalMode) {
     const { result, second } = computeEquals();
-    if (S.op !== null && S.firstVal !== null) {
-      S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
-    } else { S.histExpr = ''; }
+    // S.liveExpr には入力通りの式が積み上がっているので末尾の数値を追記するだけ
+    S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
     S.disp = fmtNum(result);
     S.liveExpr = '';
     afterEquals();
