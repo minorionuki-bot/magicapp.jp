@@ -818,6 +818,7 @@ render();
   if (!('datetimeCollective' in s)) CFG.datetimeCollective = s.collective ?? false;
   if (!('numberEqualsN'      in s)) CFG.numberEqualsN      = s.equalsN    ?? 1;
   if (!('datetimeEqualsN'    in s)) CFG.datetimeEqualsN    = s.equalsN    ?? 1;
+  normalMode = false;  // 設定読み込み時は必ず通常モードを解除してフォースモードへ
   activeIsDateTime = s.isDateTime ?? CFG.isDateTime;
   setClockMode(activeIsDateTime);
   try { localStorage.setItem('magic_cfg', JSON.stringify(CFG)); } catch(e) {}
