@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v23</title>
+<title>Magic Calc v24</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -290,6 +290,7 @@ const CFG = parseSettings();
 
 // アクティブモード（タップで切り替え可能。CFGの初期値を引き継ぐ）
 let activeIsDateTime = CFG.isDateTime;
+let normalMode = false;  // 6時=通常電卓モード（フォースなし）
 
 // ────────────────────────────────────────────
 // 電卓の状態
@@ -517,6 +518,19 @@ function inputOp(op) {
 
 function inputEquals() {
   S.eqCount++;
+
+  // 通常電卓モード（6時）: フォースなし、純粋な計算のみ
+  if (normalMode) {
+    const { result, second } = computeEquals();
+    if (S.op !== null && S.firstVal !== null) {
+      S.histExpr = fmtHist(S.firstVal) + ' ' + S.op + ' ' + fmtHist(second);
+    } else { S.histExpr = ''; }
+    S.disp = fmtNum(result);
+    S.liveExpr = '';
+    afterEquals();
+    render();
+    return;
+  }
 
   const activeCollective = getActiveCollective();
   const activeEqualsN    = getActiveEqualsN();
@@ -757,8 +771,8 @@ const $mh = document.getElementById('mh');
 
 function setClockMode(isDateTime) {
   const cx = 12, cy = 12;
-  // 時針: 日時=3時(90°)、数字=9時(270°)
-  const hDeg = isDateTime ? 90 : 270;
+  // 時針: 通常=6時(180°)、日時=3時(90°)、数字=9時(270°)
+  const hDeg = normalMode ? 180 : isDateTime ? 90 : 270;
   const hr = (hDeg * Math.PI / 180) - Math.PI / 2;
   $hh.setAttribute('x2', (cx + Math.cos(hr) * 4.2).toFixed(2));
   $hh.setAttribute('y2', (cy + Math.sin(hr) * 4.2).toFixed(2));
@@ -768,15 +782,23 @@ function setClockMode(isDateTime) {
 }
 setClockMode(activeIsDateTime);
 
-// 時計タップでモード切り替え（アイドル状態のみ、切り替え先が有効な場合のみ）
+// 時計タップでモード切り替え（アイドル状態のみ）
+// サイクル: 6時(通常) → 9時(数字) → 3時(日時) → 6時(通常)…
 const $clockBtn = document.querySelector('#top-bar .top-icon');
 $clockBtn.addEventListener('click', () => {
   const isIdle = S.disp === '0' && S.firstVal === null && !S.liveExpr && S.phase === 'normal';
   if (!isIdle) return;
-  const newMode = !activeIsDateTime;
-  if (newMode  && CFG.datetimeEnabled === false) return;
-  if (!newMode && CFG.numberEnabled   === false) return;
-  activeIsDateTime = newMode;
+  if (normalMode) {
+    // 6時 → 9時（数字フォース）
+    normalMode = false;
+    activeIsDateTime = false;
+  } else if (!activeIsDateTime) {
+    // 9時 → 3時（日時フォース）
+    activeIsDateTime = true;
+  } else {
+    // 3時 → 6時（通常電卓）
+    normalMode = true;
+  }
   setClockMode(activeIsDateTime);
   clear();
 });
