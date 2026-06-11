@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v30</title>
+<title>Magic Calc v31</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -225,8 +225,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 async function fetchSupabaseSettings(uuid) {
   try {
     const res = await fetch(
-      // updated_at降順で最新1件を取得（同一UUIDの古い行を読まないように）
-      `${SUPABASE_URL}/rest/v1/magiccalc_settings?uuid=eq.${encodeURIComponent(uuid)}&select=settings&order=updated_at.desc&limit=1`,
+      `${SUPABASE_URL}/rest/v1/magiccalc_settings?uuid=eq.${encodeURIComponent(uuid)}&select=settings`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const data = await res.json();
