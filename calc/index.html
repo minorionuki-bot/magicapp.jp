@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v29</title>
+<title>Magic Calc v30</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -225,7 +225,8 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 async function fetchSupabaseSettings(uuid) {
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/magiccalc_settings?uuid=eq.${encodeURIComponent(uuid)}&select=settings`,
+      // updated_at降順で最新1件を取得（同一UUIDの古い行を読まないように）
+      `${SUPABASE_URL}/rest/v1/magiccalc_settings?uuid=eq.${encodeURIComponent(uuid)}&select=settings&order=updated_at.desc&limit=1`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const data = await res.json();
@@ -818,15 +819,26 @@ render();
   if (!uuid) return;
   const s = await fetchSupabaseSettings(uuid);
   if (!s) return;
-  Object.assign(CFG, s);
-  // localStorageに残った古い collective 値をSupabaseの値で必ず上書きする
-  CFG.collective = s.collective ?? false;
+
+  // localStorageに残った古い設定をすべてデフォルトにリセットしてから上書き
+  // （Object.assign(CFG, s)だけだと、sにないキーの古い値が残り続ける）
+  const cleanDefaults = {
+    isDateTime: true, collective: false, equalsN: 1,
+    target: 100, offsetSec: 0,
+    fmtYear: false, fmtShortYear: true, fmtMonth: true, fmtDay: true,
+    fmtHour: false, fmtMinute: false, use24h: true,
+    numberEnabled: true,   numberCollective: false, numberEqualsN: 1,
+    datetimeEnabled: true, datetimeCollective: false, datetimeEqualsN: 1,
+  };
+  Object.assign(CFG, cleanDefaults, s);
+
   // 旧フォーマット(collective)と新フォーマット(numberCollective/datetimeCollective)の互換
-  // Supabaseデータに per-mode キーがない場合は legacy collective にフォールバック
+  CFG.collective = s.collective ?? false;
   if (!('numberCollective'   in s)) CFG.numberCollective   = s.collective ?? false;
   if (!('datetimeCollective' in s)) CFG.datetimeCollective = s.collective ?? false;
   if (!('numberEqualsN'      in s)) CFG.numberEqualsN      = s.equalsN    ?? 1;
   if (!('datetimeEqualsN'    in s)) CFG.datetimeEqualsN    = s.equalsN    ?? 1;
+
   normalMode = false;  // 設定読み込み時は必ず通常モードを解除してフォースモードへ
   activeIsDateTime = s.isDateTime ?? CFG.isDateTime;
   setClockMode(activeIsDateTime);
