@@ -344,22 +344,41 @@ function getActiveEqualsN() {
 function getTargetStr() {
   if (!activeIsDateTime) return fmtNum(CFG.target);
   const d = new Date(Date.now() + CFG.offsetSec * 1000);
-  let r = '';
-  if (CFG.fmtYear) {
-    const y = d.getFullYear();
-    r += CFG.fmtShortYear
-      ? String(y % 100).padStart(2, '0')
-      : String(y).padStart(4, '0');
+  const yr = CFG.fmtShortYear
+    ? String(d.getFullYear() % 100).padStart(2, '0')
+    : String(d.getFullYear()).padStart(4, '0');
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dy = String(d.getDate()).padStart(2, '0');
+  let h = d.getHours();
+  if (!CFG.use24h && h > 12) h -= 12;
+  const hh = String(h).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const order = CFG.fmtOrder ?? 0;
+  let parts = [];
+  switch (order) {
+    case 1: // mm/dd/yy/hh/mm
+      if (CFG.fmtMonth)  parts.push(mo);
+      if (CFG.fmtDay)    parts.push(dy);
+      if (CFG.fmtYear)   parts.push(yr);
+      if (CFG.fmtHour)   parts.push(hh);
+      if (CFG.fmtMinute) parts.push(mi);
+      break;
+    case 2: // dd/mm/yy/hh/mm
+      if (CFG.fmtDay)    parts.push(dy);
+      if (CFG.fmtMonth)  parts.push(mo);
+      if (CFG.fmtYear)   parts.push(yr);
+      if (CFG.fmtHour)   parts.push(hh);
+      if (CFG.fmtMinute) parts.push(mi);
+      break;
+    default: // 0: yy/mm/dd/hh/mm  /  3: mm/dd/hh/mm（fmtYear=false）
+      if (CFG.fmtYear)   parts.push(yr);
+      if (CFG.fmtMonth)  parts.push(mo);
+      if (CFG.fmtDay)    parts.push(dy);
+      if (CFG.fmtHour)   parts.push(hh);
+      if (CFG.fmtMinute) parts.push(mi);
+      break;
   }
-  if (CFG.fmtMonth)  r += String(d.getMonth() + 1); // 月は先頭ゼロなし（5月→「5」）
-  if (CFG.fmtDay)    r += String(d.getDate()).padStart(2, '0');
-  if (CFG.fmtHour) {
-    let h = d.getHours();
-    if (!CFG.use24h && h > 12) h -= 12;
-    r += String(h).padStart(2, '0');
-  }
-  if (CFG.fmtMinute) r += String(d.getMinutes()).padStart(2, '0');
-  return r || '0';
+  return parts.join('') || '0';
 }
 
 // 計算に使う数値を返す
@@ -826,7 +845,7 @@ render();
     isDateTime: true, collective: false, equalsN: 1,
     target: 100, offsetSec: 0,
     fmtYear: false, fmtShortYear: true, fmtMonth: true, fmtDay: true,
-    fmtHour: false, fmtMinute: false, use24h: true,
+    fmtHour: false, fmtMinute: false, use24h: true, fmtOrder: 0,
     numberEnabled: true,   numberCollective: false, numberEqualsN: 1,
     datetimeEnabled: true, datetimeCollective: false, datetimeEqualsN: 1,
   };
