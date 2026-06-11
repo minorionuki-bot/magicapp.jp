@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v26</title>
+<title>Magic Calc v28</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -804,10 +804,17 @@ $clockBtn.addEventListener('click', () => {
 render();
 
 // ────────────────────────────────────────────
-// Supabase から設定を取得（?id=UUID がある場合）
+// Supabase から設定を取得
+// URLに ?id=UUID がある場合はそれを使いlocalStorageに保存。
+// ない場合はlocalStorageに保存済みのUUIDを使う（PWA/ホーム画面追加対応）
 // ────────────────────────────────────────────
 (async () => {
-  const uuid = new URLSearchParams(location.search).get('id');
+  let uuid = new URLSearchParams(location.search).get('id');
+  if (uuid) {
+    try { localStorage.setItem('magic_uuid', uuid); } catch(e) {}
+  } else {
+    try { uuid = localStorage.getItem('magic_uuid'); } catch(e) {}
+  }
   if (!uuid) return;
   const s = await fetchSupabaseSettings(uuid);
   if (!s) return;
