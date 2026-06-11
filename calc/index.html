@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v28</title>
+<title>Magic Calc v29</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -324,12 +324,12 @@ const S = {
 // 新フォーマット(numberCollective/datetimeCollective)が明示的にtrueの場合のみ採用し、
 // それ以外（false / 未設定）は旧フォーマット(collective)を参照する
 function getActiveCollective() {
+  // ?? を使うことで明示的に false が設定されていればそれを優先し、
+  // 未設定(null/undefined)のときのみ legacy collective にフォールバック
   if (activeIsDateTime) {
-    if (CFG.datetimeCollective === true) return true;
-    return CFG.collective ?? false;
+    return CFG.datetimeCollective ?? CFG.collective ?? false;
   } else {
-    if (CFG.numberCollective === true) return true;
-    return CFG.collective ?? false;
+    return CFG.numberCollective ?? CFG.collective ?? false;
   }
 }
 
@@ -819,6 +819,8 @@ render();
   const s = await fetchSupabaseSettings(uuid);
   if (!s) return;
   Object.assign(CFG, s);
+  // localStorageに残った古い collective 値をSupabaseの値で必ず上書きする
+  CFG.collective = s.collective ?? false;
   // 旧フォーマット(collective)と新フォーマット(numberCollective/datetimeCollective)の互換
   // Supabaseデータに per-mode キーがない場合は legacy collective にフォールバック
   if (!('numberCollective'   in s)) CFG.numberCollective   = s.collective ?? false;
