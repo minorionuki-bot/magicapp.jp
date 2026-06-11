@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
-<title>Magic Calc v31</title>
+<title>Magic Calc v33</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -817,6 +817,7 @@ render();
   }
   if (!uuid) return;
   const s = await fetchSupabaseSettings(uuid);
+  console.log('[MagicCalc] Supabase settings:', JSON.stringify(s));
   if (!s) return;
 
   // localStorageに残った古い設定をすべてデフォルトにリセットしてから上書き
