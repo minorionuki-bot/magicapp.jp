@@ -708,15 +708,21 @@ function render() {
   const hist = getHistExpr();
 
   // ── メイン表示 ──
+  const effectiveCount = (s) => {
+    const digits = (s.match(/\d/g) || []).length;
+    const ops    = (s.match(/[+\-×÷]/g) || []).length;
+    return digits + ops;
+  };
   const mainFontSize = (s) => {
-    const digits = s.replace(/[^0-9]/g, '').length;
-    if (digits <= 9)  return '70px';
-    if (digits <= 11) return '64px';
-    return '58px';
+    const n = effectiveCount(s);
+    if (n <= 8)  return '60px';
+    if (n <= 9)  return '58px';
+    if (n <= 10) return '56px';
+    return '54px';
   };
   if (live) {
     $main.textContent = live;
-    $main.style.fontSize = '70px';
+    $main.style.fontSize = mainFontSize(live);
     $main.style.wordSpacing = '-0.15em';
     $hist.style.display = 'none';
   } else {
