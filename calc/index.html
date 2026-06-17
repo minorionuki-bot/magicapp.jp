@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v34</title>
+<title>Magic Calc v35</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -768,10 +768,16 @@ $grid.addEventListener('pointerdown', e => {
   if (!btn) return;
   const a = btn.dataset.a;
 
-  // コレクティブ replacing フェーズ中は = 以外どのボタンでも次の桁を進める
-  if (getActiveCollective() && S.phase === 'replacing' && a !== 'eq') {
-    inputDigit('0');
-    return;
+  // コレクティブ replacing フェーズ中はどのボタンでも次の桁を進める（= 含む）
+  // 全桁揃い済みの場合は = のみ確定処理、それ以外は何もしない
+  if (getActiveCollective() && S.phase === 'replacing') {
+    const sfVal = Math.abs(S.frozen - S.total);
+    const sf = fmtNum(sfVal).replace(/[^0-9]/g, '');
+    if (S.revealed < sf.length) {
+      inputDigit('0');
+      return;
+    }
+    if (a !== 'eq') return;
   }
 
   if      (a.startsWith('d:'))  inputDigit(a.slice(2));
