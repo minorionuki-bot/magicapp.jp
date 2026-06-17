@@ -814,8 +814,6 @@ setClockMode(activeIsDateTime);
 // サイクル: 6時(通常) → 9時(数字) → 3時(日時) → 6時(通常)…
 const $clockBtn = document.querySelector('#top-bar .top-icon');
 $clockBtn.addEventListener('click', () => {
-  const isIdle = S.disp === '0' && S.firstVal === null && !S.liveExpr && S.phase === 'normal';
-  if (!isIdle) return;
   if (normalMode) {
     // 6時 → 9時（数字フォース）
     normalMode = false;
@@ -828,7 +826,18 @@ $clockBtn.addEventListener('click', () => {
     normalMode = true;
   }
   setClockMode(activeIsDateTime);
-  clear();
+  // 算術状態（disp・firstVal・op・式履歴）はそのまま保持し、フォース固有の状態のみリセット
+  S.eqCount      = 0;
+  S.phase        = 'normal';
+  S.frozen       = 0;
+  S.frozenStr    = '';
+  S.total        = 0;
+  S.collOp       = null;
+  S.revealed     = 0;
+  S.indDir       = null;
+  S.hlOp         = null;
+  S.dispIsTarget = false;
+  render();
 });
 
 // ────────────────────────────────────────────
