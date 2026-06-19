@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v35</title>
+<title>Magic Calc v36</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -632,9 +632,30 @@ function inputDecimal() {
 }
 
 function inputBack() {
-  if (S.sreset) return;
-  S.disp = S.disp.length > 1 ? S.disp.slice(0, -1) : '0';
-  if (S.disp === '-') S.disp = '0';
+  // 演算子保留中のとき：演算子を削除して前の数値に戻る
+  if (S.sreset) {
+    if (S.op !== null) {
+      S.disp     = fmtNum(S.firstVal ?? 0);
+      S.op       = null;
+      S.hlOp     = null;
+      S.liveExpr = '';
+      S.firstVal = null;
+      S.sreset   = false;
+      render();
+    }
+    return;
+  }
+  if (S.disp.length > 1) {
+    S.disp = S.disp.slice(0, -1);
+    if (S.disp === '-') S.disp = '0';
+  } else {
+    // 1桁になったとき：演算子があれば演算子保留状態に戻る
+    if (S.op !== null) {
+      S.sreset = true;
+    } else {
+      S.disp = '0';
+    }
+  }
   render();
 }
 
