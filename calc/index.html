@@ -802,8 +802,9 @@ const $mh       = document.getElementById('mh');
 
 function setClockMode() {
   const cx = 12, cy = 12;
-  // 時針角度: 即興=0°(12時) 日時=90°(3時) 通常=180°(6時) 数字=270°(9時)
-  const hDeg = improvedMode ? 0 : activeIsDateTime ? 90 : normalMode ? 180 : 270;
+  // 時針角度: ポジション基準（モードではなく位置で決定）
+  const posAngles = { "12": 0, "3": 90, "6": 180, "9": 270 };
+  const hDeg = posAngles[currentPos] ?? 270;
   const hr = (hDeg * Math.PI / 180) - Math.PI / 2;
   $hh.setAttribute('x2', (cx + Math.cos(hr) * 4.2).toFixed(2));
   $hh.setAttribute('y2', (cy + Math.sin(hr) * 4.2).toFixed(2));
