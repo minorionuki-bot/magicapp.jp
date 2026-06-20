@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v38</title>
+<title>Magic Calc v39</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -162,7 +162,7 @@ html,body{
       <rect x="9.75" y="3"    width="4.5" height="4.5" rx="0.8"/>
       <rect x="16.5" y="3"    width="4.5" height="4.5" rx="0.8"/>
       <rect x="3"    y="9.75" width="4.5" height="4.5" rx="0.8"/>
-      <rect x="9.75" y="9.75" width="4.5" height="4.5" rx="0.8"/>
+      <rect x="9.75" y="9.75" width="4.5" height="4.5" rx="0.8" id="grid-center"/>
       <rect x="16.5" y="9.75" width="4.5" height="4.5" rx="0.8"/>
       <rect x="3"    y="16.5" width="4.5" height="4.5" rx="0.8"/>
       <rect x="9.75" y="16.5" width="4.5" height="4.5" rx="0.8"/>
@@ -318,6 +318,7 @@ const S = {
   // 即興モード
   improvedTarget    : 0,     // 設定したフォース数字
   improvedTargetSet : false, // ターゲット設定済みフラグ
+  improvedArmed     : false, // グリッド中央塗りつぶし表示中（次の数字入力でOFF）
 };
 
 // ────────────────────────────────────────────
@@ -475,6 +476,9 @@ function applyForce() {
 // 入力ハンドラ
 // ────────────────────────────────────────────
 function inputDigit(d) {
+  // 即興モードのアーム状態を数字入力でクリア（グリッド中央が元に戻る）
+  if (improvedMode && S.improvedArmed) S.improvedArmed = false;
+
   // コレクティブ「replacing」フェーズ：不足分を1桁ずつ誘導
   if (getActiveCollective() && S.phase === 'replacing') {
     const shortfall = Math.abs(S.frozen - S.total);
@@ -697,6 +701,7 @@ function clear() {
     // 即興モード中はターゲットを保持（AC後も再利用できる）
     improvedTarget:    improvedMode ? S.improvedTarget    : 0,
     improvedTargetSet: improvedMode ? S.improvedTargetSet : false,
+    improvedArmed:     false,  // ACでアームをリセット
   });
   render();
 }
@@ -792,6 +797,10 @@ function render() {
     b.classList.toggle('hl', a && a.startsWith('op:') && a.slice(3) === S.hlOp);
   });
 
+  // ── グリッドアイコン中央ブロック（即興モードのアーム状態）──
+  const $gc = document.getElementById('grid-center');
+  if ($gc) $gc.setAttribute('fill', (improvedMode && S.improvedArmed) ? 'white' : 'none');
+
   // ── インジケータドット（±ボタン）──
   $pm.querySelector('.ind-dot')?.remove();
   if (S.indDir) {
@@ -818,20 +827,14 @@ $grid.addEventListener('pointerdown', e => {
       eqLongPressTimer = null;
       const target = parseFloat(S.disp);
       if (isNaN(target) || S.disp === '0') return;
-      S.improvedTarget    = target;
-      S.improvedTargetSet = true;
-      // グリッドアイコンを一瞬消してセット完了を伝える
-      $gridIcon.style.visibility = 'hidden';
-      setTimeout(() => {
-        $gridIcon.style.visibility = '';
-        Object.assign(S, {
-          disp:'0', firstVal:null, op:null, sreset:false, dispIsTarget:false,
-          liveExpr:'', histExpr:'', eqCount:0, hlOp:null, phase:'normal',
-          frozen:0, frozenStr:'', total:0, collOp:null, revealed:0, indDir:null,
-          improvedTarget: S.improvedTarget, improvedTargetSet: true,
-        });
-        render();
-      }, 500);
+      // ターゲットセット＋グリッド中央を塗りつぶし（アーム状態）
+      Object.assign(S, {
+        disp:'0', firstVal:null, op:null, sreset:false, dispIsTarget:false,
+        liveExpr:'', histExpr:'', eqCount:0, hlOp:null, phase:'normal',
+        frozen:0, frozenStr:'', total:0, collOp:null, revealed:0, indDir:null,
+        improvedTarget: target, improvedTargetSet: true, improvedArmed: true,
+      });
+      render();
     }, 800);
     return;
   }
