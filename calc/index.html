@@ -7,17 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v39</title>
-<!--
-  設定はURLハッシュで渡す例:
-  #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
-  dt   : 1=日時モード 0=数値モード
-  coll : 1=コレクティブ 0=通常
-  eq   : フォースまでの=回数
-  target: 数値フォースの目標値
-  off  : 追加秒数
-  fY fSY fM fD fH fMin h24 : 日時フォーマット
--->
+<title>Magic Calc v40</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 
@@ -28,7 +18,6 @@ html,body{
   background:#000;
 }
 
-/* bodyではなくdiv#appにposition:fixedを使う（iOS Safari対応） */
 #app{
   position:fixed;top:0;left:0;right:0;bottom:0;
   display:flex;flex-direction:column;
@@ -98,7 +87,6 @@ html,body{
 }
 .btn-lbl{pointer-events:none;line-height:1}
 
-/* ── ダークボタン（数字） ── */
 .btn-dark{
   background:#343434;
   box-shadow:inset 0 1px 0 #5A5A5A,inset 0 -1px 0 #2A2A2A,inset 0 0 0 1px #444;
@@ -107,7 +95,6 @@ html,body{
 .btn-dark:active{background:#737373;box-shadow:none}
 .btn-dark .btn-lbl{font-size:38px}
 
-/* ── グレーボタン（AC %  ⌫） ── */
 .btn-gray{
   background:#5C5C5C;
   box-shadow:inset 0 1px 0 #7A7A7A,inset 0 -1px 0 #4A4A4A,inset 0 0 0 1px #666;
@@ -116,7 +103,6 @@ html,body{
 .btn-gray:active{background:#888;box-shadow:none}
 .btn-gray .btn-lbl{font-size:38px}
 
-/* ── オレンジボタン（演算子） ── */
 .btn-orange{
   background:#FE9100;
   box-shadow:inset 0 1px 0 #FFAE30,inset 0 -1px 0 #D67A00,inset 0 0 0 1px #E88200;
@@ -125,11 +111,9 @@ html,body{
 .btn-orange:active{background:#FFC700;box-shadow:none}
 .btn-orange .btn-lbl{font-size:43px}
 
-/* 選択中の演算子（白背景・オレンジ文字） */
 .btn-orange.hl{background:#fff;box-shadow:none;color:#FE9100}
 .btn-orange.hl:active{background:rgba(255,255,255,0.75)}
 
-/* ── インジケータドット（±ボタン） ── */
 .ind-dot{
   position:absolute;
   width:5px;height:5px;border-radius:50%;
@@ -144,10 +128,8 @@ html,body{
 <body>
 <div id="app">
 
-<!-- 上部アイコン -->
 <div id="top-bar">
   <div class="top-icon">
-    <!-- アナログ時計 SVG（毎秒更新） -->
     <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round">
       <circle cx="12" cy="12" r="9" stroke="white" stroke-opacity="0.7" stroke-width="1.5"/>
       <line id="hh" x1="12" y1="12" x2="12" y2="7.5" stroke="white" stroke-opacity="0.85" stroke-width="1.6"/>
@@ -156,7 +138,6 @@ html,body{
     </svg>
   </div>
   <div class="top-icon">
-    <!-- 3×3 グリッド SVG -->
     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3"    y="3"    width="4.5" height="4.5" rx="0.8"/>
       <rect x="9.75" y="3"    width="4.5" height="4.5" rx="0.8"/>
@@ -171,35 +152,28 @@ html,body{
   </div>
 </div>
 
-<!-- 数値表示 -->
 <div id="display">
   <div id="hist-line"></div>
   <div id="main-disp">0</div>
 </div>
 
-<!-- ボタングリッド -->
 <div id="btn-grid">
-  <!-- Row 1 -->
   <button class="btn btn-gray"   data-a="back"   ><span class="btn-lbl">⌫</span></button>
   <button class="btn btn-gray"   data-a="clear"  id="ac"><span class="btn-lbl">AC</span></button>
   <button class="btn btn-gray"   data-a="pct"    ><span class="btn-lbl">%</span></button>
   <button class="btn btn-orange" data-a="op:÷"   ><span class="btn-lbl">÷</span></button>
-  <!-- Row 2 -->
   <button class="btn btn-dark"   data-a="d:7"><span class="btn-lbl">7</span></button>
   <button class="btn btn-dark"   data-a="d:8"><span class="btn-lbl">8</span></button>
   <button class="btn btn-dark"   data-a="d:9"><span class="btn-lbl">9</span></button>
   <button class="btn btn-orange" data-a="op:×"><span class="btn-lbl">×</span></button>
-  <!-- Row 3 -->
   <button class="btn btn-dark"   data-a="d:4"><span class="btn-lbl">4</span></button>
   <button class="btn btn-dark"   data-a="d:5"><span class="btn-lbl">5</span></button>
   <button class="btn btn-dark"   data-a="d:6"><span class="btn-lbl">6</span></button>
   <button class="btn btn-orange" data-a="op:−"><span class="btn-lbl">−</span></button>
-  <!-- Row 4 -->
   <button class="btn btn-dark"   data-a="d:1"><span class="btn-lbl">1</span></button>
   <button class="btn btn-dark"   data-a="d:2"><span class="btn-lbl">2</span></button>
   <button class="btn btn-dark"   data-a="d:3"><span class="btn-lbl">3</span></button>
   <button class="btn btn-orange" data-a="op:+"><span class="btn-lbl">+</span></button>
-  <!-- Row 5 -->
   <button class="btn btn-dark"   data-a="pm"  id="pm">
     <svg class="btn-lbl" width="30" height="26" viewBox="0 0 30 26" fill="none" stroke="white" stroke-linecap="round">
       <line x1="3"  y1="9"  x2="13" y2="9"  stroke-width="2.2"/>
@@ -213,7 +187,7 @@ html,body{
   <button class="btn btn-orange" data-a="eq"  ><span class="btn-lbl">=</span></button>
 </div>
 
-</div><!-- /#app -->
+</div>
 <script>
 'use strict';
 
@@ -235,118 +209,104 @@ async function fetchSupabaseSettings(uuid) {
 }
 
 // ────────────────────────────────────────────
-// ボタンサイズをCSSカスタムプロパティで設定
-// SwiftUI: (vw - hPad*2 - gap*3) / 4  hPad=13 gap=12
+// ボタンサイズ
 // ────────────────────────────────────────────
-document.documentElement.style.setProperty(
-  '--bs', 'calc((100vw - 26px - 36px) / 4)'
-);
+document.documentElement.style.setProperty('--bs', 'calc((100vw - 26px - 36px) / 4)');
 
 // ────────────────────────────────────────────
-// 設定（URLハッシュから読み込み）
+// ポジション設定（時計回り: 12→3→6→9）
 // ────────────────────────────────────────────
-function parseSettings() {
-  const hash = location.hash.replace(/^#/, '');
-  const p = new URLSearchParams(hash);
-  const b = (k, d) => p.has(k) ? (p.get(k) !== '0' && p.get(k) !== 'false' && p.get(k) !== '') : d;
+const POS_ORDER = ["12", "3", "6", "9"];
 
-  // URLハッシュに設定キーがあればそれを使い、localStorageに保存する
-  const KEYS = ['dt','coll','eq','target','off','fY','fSY','fM','fD','fH','fMin','h24'];
-  if (KEYS.some(k => p.has(k))) {
-    const cfg = {
-      isDateTime  : b('dt',   true),
-      collective  : b('coll', false),
-      equalsN     : Math.max(1, parseInt(p.get('eq') || '1')),
-      target      : parseFloat(p.get('target') || '100'),
-      offsetSec   : parseInt(p.get('off') || '0'),
-      fmtYear     : b('fY',   true),
-      fmtShortYear: b('fSY',  true),
-      fmtMonth    : b('fM',   true),
-      fmtDay      : b('fD',   true),
-      fmtHour     : b('fH',   true),
-      fmtMinute   : b('fMin', true),
-      use24h      : b('h24',  true),
-    };
-    try { localStorage.setItem('magic_cfg', JSON.stringify(cfg)); } catch(e) {}
-    return cfg;
-  }
-
-  // localStorageに保存済み設定があれば使う
-  try {
-    const saved = localStorage.getItem('magic_cfg');
-    if (saved) return JSON.parse(saved);
-  } catch(e) {}
-
-  // デフォルト（月日のみ）
+function makePosDefault(mode) {
   return {
-    isDateTime: true, collective: false, equalsN: 1,
-    target: 100, offsetSec: 0,
-    fmtYear: false, fmtShortYear: true, fmtMonth: true, fmtDay: true,
-    fmtHour: false, fmtMinute: false, use24h: true,
-    numberEnabled: true,   numberCollective: false, numberEqualsN: 1,
-    datetimeEnabled: true, datetimeCollective: false, datetimeEqualsN: 1,
+    enabled: true, mode,
+    target: 100, collective: false, equalsN: 1,
+    dtOffset: 0, dtFmtOrder: 0, dtUse24h: true,
+    fmtYear: false, fmtSY: true, fmtMonth: true, fmtDay: true, fmtHour: false, fmtMinute: false,
   };
 }
-const CFG = parseSettings();
 
-// アクティブモード（タップで切り替え可能。CFGの初期値を引き継ぐ）
-let activeIsDateTime = CFG.isDateTime;
-let normalMode   = false;  // 6時=通常電卓モード（フォースなし）
-let improvedMode = false;  // 12時=即興数字フォースモード
+let posConfigs = {
+  "12": makePosDefault("improvised"),
+  "3":  makePosDefault("datetime"),
+  "6":  makePosDefault("normal"),
+  "9":  makePosDefault("number"),
+};
+let currentPos = "12";
+
+// ────────────────────────────────────────────
+// アクティブモード変数（switchToPos で同期）
+// ────────────────────────────────────────────
+let activeIsDateTime = false;
+let normalMode   = false;
+let improvedMode = false;
+
+// ────────────────────────────────────────────
+// アクティブ設定（switchToPos で posConfigs から更新）
+// ────────────────────────────────────────────
+const CFG = {
+  target: 100, offsetSec: 0,
+  fmtYear: false, fmtShortYear: true, fmtMonth: true, fmtDay: true,
+  fmtHour: false, fmtMinute: false, use24h: true, fmtOrder: 0,
+  collective: false, equalsN: 1,
+};
+
+function getActiveCollective() { return CFG.collective; }
+function getActiveEqualsN()    { return CFG.equalsN; }
+
+// ポジション切り替え: モード変数とCFGを同期
+function switchToPos(pos) {
+  currentPos = pos;
+  const pc   = posConfigs[pos] ?? makePosDefault("number");
+  const mode = pc.mode ?? "number";
+  normalMode       = mode === "normal";
+  improvedMode     = mode === "improvised";
+  activeIsDateTime = mode === "datetime";
+  CFG.target       = pc.target     ?? 100;
+  CFG.collective   = pc.collective ?? false;
+  CFG.equalsN      = Math.max(1, pc.equalsN ?? 1);
+  CFG.offsetSec    = pc.dtOffset   ?? 0;
+  CFG.fmtOrder     = pc.dtFmtOrder ?? 0;
+  CFG.use24h       = pc.dtUse24h   ?? true;
+  CFG.fmtYear      = pc.fmtYear    ?? false;
+  CFG.fmtShortYear = pc.fmtSY      ?? true;
+  CFG.fmtMonth     = pc.fmtMonth   ?? true;
+  CFG.fmtDay       = pc.fmtDay     ?? true;
+  CFG.fmtHour      = pc.fmtHour    ?? false;
+  CFG.fmtMinute    = pc.fmtMinute  ?? false;
+}
+
+// 初期ポジション（12時 = 即興モード）
+switchToPos("12");
 
 // ────────────────────────────────────────────
 // 電卓の状態
 // ────────────────────────────────────────────
 const S = {
-  disp         : '0',    // 表示文字列
-  firstVal     : null,   // 第1オペランド（number | null）
-  op           : null,   // 保留中の演算子（文字列 | null）
-  sreset       : false,  // 次の数字入力で表示をリセット
-  dispIsTarget : false,  // フォースターゲット表示中（コンマなし）
-  liveExpr     : '',     // 計算中の式（例: "5 + 3"）
-  histExpr     : '',     // =後に小さく表示する式
-  eqCount      : 0,      // =を押した累計回数（ACでリセット）
-  hlOp    : null,      // ハイライト中の演算子
-  // コレクティブモード
-  phase     : 'normal',  // 'normal' | 'afterFirst' | 'replacing'
-  frozen    : 0,         // フォースターゲット（数値）
-  frozenStr : '',        // フォースターゲット（先頭ゼロ付き表示文字列）
-  total     : 0,         // 1回目=時点の集計値
-  collOp  : null,      // 不足分に使う演算子
-  revealed: 0,         // 不足分の公開済み桁数
-  indDir  : null,      // インジケーター方向: '+' | '−' | null
-  // 即興モード
-  improvedTarget    : 0,     // 設定したフォース数字
-  improvedTargetSet : false, // ターゲット設定済みフラグ
-  improvedArmed     : false, // グリッド中央塗りつぶし表示中（次の数字入力でOFF）
+  disp         : '0',
+  firstVal     : null,
+  op           : null,
+  sreset       : false,
+  dispIsTarget : false,
+  liveExpr     : '',
+  histExpr     : '',
+  eqCount      : 0,
+  hlOp         : null,
+  phase        : 'normal',
+  frozen       : 0,
+  frozenStr    : '',
+  total        : 0,
+  collOp       : null,
+  revealed     : 0,
+  indDir       : null,
+  improvedTarget    : 0,
+  improvedTargetSet : false,
 };
 
 // ────────────────────────────────────────────
 // ターゲット値の計算
 // ────────────────────────────────────────────
-
-// 先頭ゼロを保持した表示用文字列を返す（例: 月日=「0530」）
-// アクティブモードのコレクティブ設定を返す
-// 新フォーマット(numberCollective/datetimeCollective)が明示的にtrueの場合のみ採用し、
-// それ以外（false / 未設定）は旧フォーマット(collective)を参照する
-function getActiveCollective() {
-  // ?? を使うことで明示的に false が設定されていればそれを優先し、
-  // 未設定(null/undefined)のときのみ legacy collective にフォールバック
-  if (activeIsDateTime) {
-    return CFG.datetimeCollective ?? CFG.collective ?? false;
-  } else {
-    return CFG.numberCollective ?? CFG.collective ?? false;
-  }
-}
-
-function getActiveEqualsN() {
-  if (activeIsDateTime) {
-    return ('datetimeEqualsN' in CFG) ? (CFG.datetimeEqualsN ?? 1) : (CFG.equalsN ?? 1);
-  } else {
-    return ('numberEqualsN'   in CFG) ? (CFG.numberEqualsN   ?? 1) : (CFG.equalsN ?? 1);
-  }
-}
-
 function getTargetStr() {
   if (improvedMode && S.improvedTargetSet) return fmtNum(S.improvedTarget);
   if (!activeIsDateTime) return fmtNum(CFG.target);
@@ -363,21 +323,21 @@ function getTargetStr() {
   const order = CFG.fmtOrder ?? 0;
   let parts = [];
   switch (order) {
-    case 1: // mm/dd/yy/hh/mm
+    case 1:
       if (CFG.fmtMonth)  parts.push(mo);
       if (CFG.fmtDay)    parts.push(dy);
       if (CFG.fmtYear)   parts.push(yr);
       if (CFG.fmtHour)   parts.push(hh);
       if (CFG.fmtMinute) parts.push(mi);
       break;
-    case 2: // dd/mm/yy/hh/mm
+    case 2:
       if (CFG.fmtDay)    parts.push(dy);
       if (CFG.fmtMonth)  parts.push(mo);
       if (CFG.fmtYear)   parts.push(yr);
       if (CFG.fmtHour)   parts.push(hh);
       if (CFG.fmtMinute) parts.push(mi);
       break;
-    default: // 0: yy/mm/dd/hh/mm  /  3: mm/dd/hh/mm（fmtYear=false）
+    default:
       if (CFG.fmtYear)   parts.push(yr);
       if (CFG.fmtMonth)  parts.push(mo);
       if (CFG.fmtDay)    parts.push(dy);
@@ -388,7 +348,6 @@ function getTargetStr() {
   return parts.join('') || '0';
 }
 
-// 計算に使う数値を返す
 function getTarget() {
   if (improvedMode && S.improvedTargetSet) return S.improvedTarget;
   if (!activeIsDateTime) return CFG.target;
@@ -429,20 +388,12 @@ function fmtHist(v) {
   return parseFloat(v.toPrecision(4)).toString();
 }
 
-function digitCount(v) {
-  return fmtNum(Math.abs(v)).replace(/[^0-9]/g, '').length;
-}
-
-// ────────────────────────────────────────────
-// 通常の計算（=を押したときの基本処理）
-// ────────────────────────────────────────────
 function computeEquals() {
   const second = parseFloat(S.disp) || 0;
   if (S.op !== null && S.firstVal !== null) {
     const result = compute(S.firstVal, second, S.op);
     return { result, second };
   }
-  // 演算子なし：単独値
   return { result: parseFloat(S.disp) || 0, second: parseFloat(S.disp) || 0 };
 }
 
@@ -458,9 +409,6 @@ function afterEquals() {
 // ────────────────────────────────────────────
 function applyForce() {
   const second = parseFloat(S.disp) || 0;
-
-  // S.liveExpr に入力通りの式が積み上がっているのでそれを使う
-  // liveExprがない場合（equalsNの2回目以降など）は既存のhistExprを維持
   if (S.liveExpr) {
     S.histExpr = S.liveExpr + ' ' + fmtHist(second);
   } else if (!S.histExpr) {
@@ -468,7 +416,7 @@ function applyForce() {
   }
   S.liveExpr     = '';
   S.disp         = getTargetStr();
-  S.dispIsTarget = true; // フォースターゲット表示中
+  S.dispIsTarget = true;
   afterEquals();
 }
 
@@ -476,10 +424,6 @@ function applyForce() {
 // 入力ハンドラ
 // ────────────────────────────────────────────
 function inputDigit(d) {
-  // 即興モードのアーム状態を数字入力でクリア（グリッド中央が元に戻る）
-  if (improvedMode && S.improvedArmed) S.improvedArmed = false;
-
-  // コレクティブ「replacing」フェーズ：不足分を1桁ずつ誘導
   if (getActiveCollective() && S.phase === 'replacing') {
     const shortfall = Math.abs(S.frozen - S.total);
     const sf = fmtNum(shortfall).replace(/[^0-9]/g, '');
@@ -493,7 +437,6 @@ function inputDigit(d) {
 
   if (S.sreset) {
     if (!S.op && S.phase === 'normal') {
-      // =後の新規入力：リセット（collectiveのafterFirst/replacingフェーズ中は維持）
       S.firstVal     = null;
       S.liveExpr     = '';
       S.histExpr     = '';
@@ -510,7 +453,6 @@ function inputDigit(d) {
 }
 
 function inputOp(op) {
-  // コレクティブ「afterFirst」フェーズ：演算子受付
   if (getActiveCollective() && S.phase === 'afterFirst') {
     S.collOp  = op;
     S.op      = op;
@@ -524,17 +466,14 @@ function inputOp(op) {
   const cur = parseFloat(S.disp) || 0;
 
   if (S.op !== null && !S.sreset) {
-    // 連続演算（チェーン計算）
     const res = compute(S.firstVal, cur, S.op);
     S.firstVal = res;
     S.disp     = fmtNum(res);
     S.liveExpr += ' ' + fmtHist(cur) + ' ' + op;
   } else if (S.firstVal === null) {
-    // 最初の演算子
     S.firstVal = cur;
     S.liveExpr = fmtHist(cur) + ' ' + op;
   } else if (S.sreset && S.op !== null) {
-    // 演算子の変更（連続押し）
     const last = S.liveExpr.lastIndexOf(' ');
     if (last >= 0) S.liveExpr = S.liveExpr.slice(0, last + 1) + op;
   } else {
@@ -550,7 +489,6 @@ function inputOp(op) {
 function inputEquals() {
   S.eqCount++;
 
-  // 即興モードかつターゲット未設定：通常計算のみ（フォースなし）
   if (improvedMode && !S.improvedTargetSet) {
     const { result, second } = computeEquals();
     S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
@@ -561,10 +499,8 @@ function inputEquals() {
     return;
   }
 
-  // 通常電卓モード（6時）: フォースなし、純粋な計算のみ
   if (normalMode) {
     const { result, second } = computeEquals();
-    // S.liveExpr には入力通りの式が積み上がっているので末尾の数値を追記するだけ
     S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
     S.disp = fmtNum(result);
     S.liveExpr = '';
@@ -577,19 +513,16 @@ function inputEquals() {
   const activeEqualsN    = getActiveEqualsN();
 
   if (activeCollective) {
-    // ── コレクティブモード ──
     switch (S.phase) {
       case 'normal': {
         const { result, second } = computeEquals();
         if (S.eqCount < activeEqualsN) {
-          // まだ発動しない：通常計算表示
           S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
           S.disp = fmtNum(result);
           S.liveExpr = '';
           afterEquals();
           break;
         }
-        // 発動：コレクティブ開始
         S.disp      = fmtNum(result);
         S.liveExpr  = '';
         S.frozenStr = getTargetStr();
@@ -604,14 +537,11 @@ function inputEquals() {
         break;
       }
       case 'afterFirst':
-        // 演算子待ち：無視
         break;
       case 'replacing': {
-        // 完了：フォースターゲットを表示
         const sfVal = Math.abs(S.frozen - S.total);
         if (S.collOp) {
-          const base = S.total;
-          S.histExpr = fmtHist(base) + ' ' + S.collOp + ' ' + fmtHist(sfVal);
+          S.histExpr = fmtHist(S.total) + ' ' + S.collOp + ' ' + fmtHist(sfVal);
         } else { S.histExpr = ''; }
         S.disp         = S.frozenStr || fmtNum(S.frozen);
         S.dispIsTarget = true;
@@ -629,16 +559,13 @@ function inputEquals() {
       }
     }
   } else {
-    // ── 通常フォースモード ──
     if (S.eqCount < activeEqualsN) {
-      // まだ発動しない
       const { result, second } = computeEquals();
       S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
       S.disp     = fmtNum(result);
       S.liveExpr = '';
       afterEquals();
     } else {
-      // フォース発動
       S.eqCount = 0;
       applyForce();
     }
@@ -653,7 +580,6 @@ function inputDecimal() {
 }
 
 function inputBack() {
-  // 演算子保留中のとき：演算子を削除して前の数値に戻る
   if (S.sreset) {
     if (S.op !== null) {
       S.disp     = fmtNum(S.firstVal ?? 0);
@@ -670,7 +596,6 @@ function inputBack() {
     S.disp = S.disp.slice(0, -1);
     if (S.disp === '-') S.disp = '0';
   } else {
-    // 1桁になったとき：演算子があれば演算子保留状態に戻る
     if (S.op !== null) {
       S.sreset = true;
     } else {
@@ -701,7 +626,6 @@ function clear() {
     // 即興モード中はターゲットを保持（AC後も再利用できる）
     improvedTarget:    improvedMode ? S.improvedTarget    : 0,
     improvedTargetSet: improvedMode ? S.improvedTargetSet : false,
-    improvedArmed:     false,  // ACでアームをリセット
   });
   render();
 }
@@ -710,10 +634,10 @@ function clear() {
 // 表示ロジック
 // ────────────────────────────────────────────
 function getLiveExpr() {
-  if (S.sreset && !S.op) return '';   // =後：liveなし
-  if (!S.liveExpr)       return '';   // 式なし
-  if (S.sreset)          return S.liveExpr;            // op直後
-  return S.liveExpr + ' ' + addCommas(S.disp);  // 入力中
+  if (S.sreset && !S.op) return '';
+  if (!S.liveExpr)       return '';
+  if (S.sreset)          return S.liveExpr;
+  return S.liveExpr + ' ' + addCommas(S.disp);
 }
 
 function getHistExpr() {
@@ -753,7 +677,6 @@ function render() {
   const live = getLiveExpr();
   const hist = getHistExpr();
 
-  // ── メイン表示 ──
   const effectiveCount = (s) => {
     const digits = (s.match(/\d/g) || []).length;
     const ops    = (s.match(/[+\-×÷]/g) || []).length;
@@ -776,7 +699,6 @@ function render() {
     const txt = formatDisplay(S.disp);
     $main.textContent = txt;
     $main.style.fontSize = mainFontSize(txt);
-
     if (hist) {
       $hist.textContent = hist;
       $hist.style.display = 'block';
@@ -784,24 +706,20 @@ function render() {
       $hist.style.display = 'none';
     }
   }
-  // 右端（最新の数字）が常に見えるようにスクロール
   requestAnimationFrame(() => { $main.scrollLeft = $main.scrollWidth; });
 
-  // ── AC / C ラベル ──
   $ac.querySelector('.btn-lbl').textContent =
     (S.disp === '0' && S.firstVal === null && !S.liveExpr) ? 'AC' : 'C';
 
-  // ── 演算子ハイライト ──
   $grid.querySelectorAll('.btn-orange').forEach(b => {
     const a = b.dataset.a;
     b.classList.toggle('hl', a && a.startsWith('op:') && a.slice(3) === S.hlOp);
   });
 
-  // ── グリッドアイコン中央ブロック（即興モードのアーム状態）──
+  // グリッドアイコン中央ブロック: 即興モードでターゲット設定済みなら塗りつぶし
   const $gc = document.getElementById('grid-center');
-  if ($gc) $gc.setAttribute('fill', (improvedMode && S.improvedArmed) ? 'white' : 'none');
+  if ($gc) $gc.setAttribute('fill', (improvedMode && S.improvedTargetSet) ? 'white' : 'none');
 
-  // ── インジケータドット（±ボタン）──
   $pm.querySelector('.ind-dot')?.remove();
   if (S.indDir) {
     const dot = document.createElement('div');
@@ -820,27 +738,23 @@ $grid.addEventListener('pointerdown', e => {
   if (!btn) return;
   const a = btn.dataset.a;
 
-  // 即興モードで = 長押し検知（800ms）: replacing フェーズ中は除外
-  // ターゲット設定済みでも長押しで上書き可能
+  // 即興モードで = 長押し（800ms）: ターゲットをセット
   if (improvedMode && a === 'eq' && S.phase !== 'replacing') {
     eqLongPressTimer = setTimeout(() => {
       eqLongPressTimer = null;
       const target = parseFloat(S.disp);
       if (isNaN(target) || S.disp === '0') return;
-      // ターゲットセット＋グリッド中央を塗りつぶし（アーム状態）
       Object.assign(S, {
         disp:'0', firstVal:null, op:null, sreset:false, dispIsTarget:false,
         liveExpr:'', histExpr:'', eqCount:0, hlOp:null, phase:'normal',
         frozen:0, frozenStr:'', total:0, collOp:null, revealed:0, indDir:null,
-        improvedTarget: target, improvedTargetSet: true, improvedArmed: true,
+        improvedTarget: target, improvedTargetSet: true,
       });
       render();
     }, 800);
     return;
   }
 
-  // コレクティブ replacing フェーズ中はどのボタンでも次の桁を進める（= 含む）
-  // 全桁揃い済みの場合は = のみ確定処理、それ以外は何もしない
   if (getActiveCollective() && S.phase === 'replacing') {
     const sfVal = Math.abs(S.frozen - S.total);
     const sf = fmtNum(sfVal).replace(/[^0-9]/g, '');
@@ -861,7 +775,6 @@ $grid.addEventListener('pointerdown', e => {
   else if (a === 'pct')         inputPercent();
 });
 
-// 即興モード長押し: 短押しは pointerup で inputEquals
 $grid.addEventListener('pointerup', e => {
   if (eqLongPressTimer !== null) {
     clearTimeout(eqLongPressTimer);
@@ -878,46 +791,45 @@ $grid.addEventListener('pointercancel', e => {
 
 // ────────────────────────────────────────────
 // 時計アイコン（モードインジケーター）
-// 日時モード: 3時方向、数字モード: 9時方向
+// 12時=0°(即興) 3時=90°(日時) 6時=180°(通常) 9時=270°(数字)
 // ────────────────────────────────────────────
 const $hh       = document.getElementById('hh');
 const $mh       = document.getElementById('mh');
-const $gridIcon = document.querySelectorAll('#top-bar .top-icon')[1];
 
-function setClockMode(isDateTime) {
+function setClockMode() {
   const cx = 12, cy = 12;
-  // 時針: 通常=6時(180°)、即興=12時(0°)、日時=3時(90°)、数字=9時(270°)
-  const hDeg = normalMode ? 180 : improvedMode ? 0 : isDateTime ? 90 : 270;
+  // 時針角度: 即興=0°(12時) 日時=90°(3時) 通常=180°(6時) 数字=270°(9時)
+  const hDeg = improvedMode ? 0 : activeIsDateTime ? 90 : normalMode ? 180 : 270;
   const hr = (hDeg * Math.PI / 180) - Math.PI / 2;
   $hh.setAttribute('x2', (cx + Math.cos(hr) * 4.2).toFixed(2));
   $hh.setAttribute('y2', (cy + Math.sin(hr) * 4.2).toFixed(2));
-  // 分針: 常に12時方向（上向き）
   $mh.setAttribute('x2', cx.toFixed(2));
   $mh.setAttribute('y2', (cy - 6.3).toFixed(2));
 }
-setClockMode(activeIsDateTime);
+setClockMode();
 
-// 時計タップでモード切り替え
-// サイクル: 6時(通常) → 9時(数字) → 3時(日時) → 12時(即興) → 6時(通常)…
+// 時計タップ: 時計回り 12→3→6→9→12（無効ポジションはスキップ）
 const $clockBtn = document.querySelector('#top-bar .top-icon');
 $clockBtn.addEventListener('click', () => {
-  if (normalMode) {
-    // 6時 → 9時（数字フォース）
-    normalMode = false; improvedMode = false; activeIsDateTime = false;
-  } else if (!activeIsDateTime && !improvedMode) {
-    // 9時 → 3時（日時フォース）
-    activeIsDateTime = true;
-  } else if (activeIsDateTime) {
-    // 3時 → 12時（即興数字フォース）
-    activeIsDateTime = false; improvedMode = true;
-    S.improvedTarget = 0; S.improvedTargetSet = false;
-  } else {
-    // 12時 → 6時（通常電卓）
-    normalMode = true; improvedMode = false;
+  const wasImproved = improvedMode;
+  const idx = POS_ORDER.indexOf(currentPos);
+  let nextIdx = (idx + 1) % POS_ORDER.length;
+  let steps = 0;
+  while (!(posConfigs[POS_ORDER[nextIdx]]?.enabled ?? true)) {
+    nextIdx = (nextIdx + 1) % POS_ORDER.length;
+    if (++steps >= POS_ORDER.length) return;
+  }
+  const nextPos     = POS_ORDER[nextIdx];
+  const nextImproved = (posConfigs[nextPos]?.mode === "improvised");
+
+  switchToPos(nextPos);
+
+  // 即興モードの往来でターゲットリセット
+  if (wasImproved || nextImproved) {
     S.improvedTarget = 0; S.improvedTargetSet = false;
   }
-  setClockMode(activeIsDateTime);
-  // 算術状態（disp・firstVal・op・式履歴）はそのまま保持し、フォース固有の状態のみリセット
+
+  setClockMode();
   S.eqCount      = 0;
   S.phase        = 'normal';
   S.frozen       = 0;
@@ -937,9 +849,7 @@ $clockBtn.addEventListener('click', () => {
 render();
 
 // ────────────────────────────────────────────
-// Supabase から設定を取得
-// URLに ?id=UUID がある場合はそれを使いlocalStorageに保存。
-// ない場合はlocalStorageに保存済みのUUIDを使う（PWA/ホーム画面追加対応）
+// Supabase から設定を取得して適用
 // ────────────────────────────────────────────
 (async () => {
   let uuid = new URLSearchParams(location.search).get('id');
@@ -953,31 +863,70 @@ render();
   console.log('[MagicCalc] Supabase settings:', JSON.stringify(s));
   if (!s) return;
 
-  // localStorageに残った古い設定をすべてデフォルトにリセットしてから上書き
-  // （Object.assign(CFG, s)だけだと、sにないキーの古い値が残り続ける）
-  const cleanDefaults = {
-    isDateTime: true, collective: false, equalsN: 1,
-    target: 100, offsetSec: 0,
-    fmtYear: false, fmtShortYear: true, fmtMonth: true, fmtDay: true,
-    fmtHour: false, fmtMinute: false, use24h: true, fmtOrder: 0,
-    numberEnabled: true,   numberCollective: false, numberEqualsN: 1,
-    datetimeEnabled: true, datetimeCollective: false, datetimeEqualsN: 1,
-  };
-  Object.assign(CFG, cleanDefaults, s);
+  if (s.positions) {
+    // ── 新フォーマット（positions キーあり）──
+    for (const key of POS_ORDER) {
+      const p = s.positions[key];
+      if (!p) continue;
+      posConfigs[key] = {
+        enabled    : p.enabled    ?? true,
+        mode       : p.mode       ?? "normal",
+        target     : p.target     ?? 100,
+        collective : p.collective ?? false,
+        equalsN    : Math.max(1, p.equalsN ?? 1),
+        dtOffset   : p.dtOffset   ?? 0,
+        dtFmtOrder : p.dtFmtOrder ?? 0,
+        dtUse24h   : p.dtUse24h   ?? true,
+        fmtYear    : p.fmtYear    ?? false,
+        fmtSY      : p.fmtShortYear ?? true,
+        fmtMonth   : p.fmtMonth   ?? true,
+        fmtDay     : p.fmtDay     ?? true,
+        fmtHour    : p.fmtHour    ?? false,
+        fmtMinute  : p.fmtMinute  ?? false,
+      };
+    }
+    // 有効な最初のポジション（12→3→6→9 順）からスタート
+    const startPos = POS_ORDER.find(k => posConfigs[k]?.enabled ?? true) ?? "12";
+    switchToPos(startPos);
 
-  // 旧フォーマット(collective)と新フォーマット(numberCollective/datetimeCollective)の互換
-  CFG.collective = s.collective ?? false;
-  if (!('numberCollective'   in s)) CFG.numberCollective   = s.collective ?? false;
-  if (!('datetimeCollective' in s)) CFG.datetimeCollective = s.collective ?? false;
-  if (!('numberEqualsN'      in s)) CFG.numberEqualsN      = s.equalsN    ?? 1;
-  if (!('datetimeEqualsN'    in s)) CFG.datetimeEqualsN    = s.equalsN    ?? 1;
+  } else {
+    // ── レガシーフォーマット（positions キーなし）──
+    const numColl = s.numberCollective  ?? s.collective ?? false;
+    const numEqN  = Math.max(1, s.numberEqualsN  ?? s.equalsN ?? 1);
+    const dtColl  = s.datetimeCollective ?? s.collective ?? false;
+    const dtEqN   = Math.max(1, s.datetimeEqualsN ?? s.equalsN ?? 1);
 
-  normalMode   = false;  // 設定読み込み時は必ず通常モードを解除してフォースモードへ
-  improvedMode = false;  // 即興モードは毎回リセット（ターゲットはライブ設定のため）
-  activeIsDateTime = s.isDateTime ?? CFG.isDateTime;
-  setClockMode(activeIsDateTime);
-  try { localStorage.setItem('magic_cfg', JSON.stringify(CFG)); } catch(e) {}
-  clear(); // 新しい設定で電卓をリセット
+    posConfigs = {
+      "12": { ...makePosDefault("improvised"), collective: numColl, equalsN: numEqN },
+      "3":  {
+        enabled: s.datetimeEnabled ?? true,
+        mode: "datetime",
+        target: 100, collective: dtColl, equalsN: dtEqN,
+        dtOffset: s.offsetSec ?? 0, dtFmtOrder: s.fmtOrder ?? 0, dtUse24h: s.use24h ?? true,
+        fmtYear: s.fmtYear ?? false, fmtSY: s.fmtShortYear ?? true,
+        fmtMonth: s.fmtMonth ?? true, fmtDay: s.fmtDay ?? true,
+        fmtHour: s.fmtHour ?? false, fmtMinute: s.fmtMinute ?? false,
+      },
+      "6":  makePosDefault("normal"),
+      "9":  {
+        enabled: s.numberEnabled ?? true,
+        mode: "number",
+        target: s.target ?? 100, collective: numColl, equalsN: numEqN,
+        dtOffset: 0, dtFmtOrder: 0, dtUse24h: true,
+        fmtYear: false, fmtSY: true, fmtMonth: true, fmtDay: true, fmtHour: false, fmtMinute: false,
+      },
+    };
+    // isDateTime フラグで初期ポジション決定（レガシー互換）
+    const wantDt  = s.isDateTime ?? false;
+    const dtOn    = s.datetimeEnabled ?? true;
+    const numOn   = s.numberEnabled   ?? true;
+    let startPos  = wantDt && dtOn ? "3" : numOn ? "9" : "12";
+    switchToPos(startPos);
+  }
+
+  S.improvedTarget = 0; S.improvedTargetSet = false;
+  setClockMode();
+  clear();
 })();
 </script>
 </body>
