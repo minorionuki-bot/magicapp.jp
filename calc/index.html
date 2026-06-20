@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
 <title>Magic Calc v40</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 
@@ -279,6 +282,7 @@ function switchToPos(pos) {
 
 // 初期ポジション（12時 = 即興モード）
 switchToPos("12");
+console.log('[MagicCalc v40] initialized. currentPos:', currentPos, 'improvedMode:', improvedMode);
 
 // ────────────────────────────────────────────
 // 電卓の状態
