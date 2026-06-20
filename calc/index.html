@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v36</title>
+<title>Magic Calc v37</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -291,7 +291,8 @@ const CFG = parseSettings();
 
 // アクティブモード（タップで切り替え可能。CFGの初期値を引き継ぐ）
 let activeIsDateTime = CFG.isDateTime;
-let normalMode = false;  // 6時=通常電卓モード（フォースなし）
+let normalMode   = false;  // 6時=通常電卓モード（フォースなし）
+let improvedMode = false;  // 12時=即興数字フォースモード
 
 // ────────────────────────────────────────────
 // 電卓の状態
@@ -314,6 +315,9 @@ const S = {
   collOp  : null,      // 不足分に使う演算子
   revealed: 0,         // 不足分の公開済み桁数
   indDir  : null,      // インジケーター方向: '+' | '−' | null
+  // 即興モード
+  improvedTarget    : 0,     // 設定したフォース数字
+  improvedTargetSet : false, // ターゲット設定済みフラグ
 };
 
 // ────────────────────────────────────────────
@@ -343,6 +347,7 @@ function getActiveEqualsN() {
 }
 
 function getTargetStr() {
+  if (improvedMode && S.improvedTargetSet) return fmtNum(S.improvedTarget);
   if (!activeIsDateTime) return fmtNum(CFG.target);
   const d = new Date(Date.now() + CFG.offsetSec * 1000);
   const yr = CFG.fmtShortYear
@@ -384,6 +389,7 @@ function getTargetStr() {
 
 // 計算に使う数値を返す
 function getTarget() {
+  if (improvedMode && S.improvedTargetSet) return S.improvedTarget;
   if (!activeIsDateTime) return CFG.target;
   return parseFloat(getTargetStr()) || 0;
 }
@@ -540,6 +546,17 @@ function inputOp(op) {
 function inputEquals() {
   S.eqCount++;
 
+  // 即興モードかつターゲット未設定：通常計算のみ（フォースなし）
+  if (improvedMode && !S.improvedTargetSet) {
+    const { result, second } = computeEquals();
+    S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
+    S.disp     = fmtNum(result);
+    S.liveExpr = '';
+    afterEquals();
+    render();
+    return;
+  }
+
   // 通常電卓モード（6時）: フォースなし、純粋な計算のみ
   if (normalMode) {
     const { result, second } = computeEquals();
@@ -677,6 +694,9 @@ function clear() {
     liveExpr:'', histExpr:'', eqCount:0, hlOp:null,
     phase:'normal', frozen:0, frozenStr:'', total:0, collOp:null,
     revealed:0, indDir:null,
+    // 即興モード中はターゲットを保持（AC後も再利用できる）
+    improvedTarget:    improvedMode ? S.improvedTarget    : 0,
+    improvedTargetSet: improvedMode ? S.improvedTargetSet : false,
   });
   render();
 }
@@ -784,10 +804,37 @@ function render() {
 // ────────────────────────────────────────────
 // イベント配線
 // ────────────────────────────────────────────
+let eqLongPressTimer = null;
+
 $grid.addEventListener('pointerdown', e => {
   const btn = e.target.closest('[data-a]');
   if (!btn) return;
   const a = btn.dataset.a;
+
+  // 即興モードでターゲット未設定時の = 長押し検知（800ms）
+  if (improvedMode && !S.improvedTargetSet && a === 'eq') {
+    eqLongPressTimer = setTimeout(() => {
+      eqLongPressTimer = null;
+      const target = parseFloat(S.disp);
+      if (isNaN(target) || S.disp === '0') return;
+      S.improvedTarget    = target;
+      S.improvedTargetSet = true;
+      // オレンジ色で一瞬表示してからゼロにリセット
+      $main.style.color = '#FE9100';
+      render();
+      setTimeout(() => {
+        $main.style.color = '';
+        Object.assign(S, {
+          disp:'0', firstVal:null, op:null, sreset:false, dispIsTarget:false,
+          liveExpr:'', histExpr:'', eqCount:0, hlOp:null, phase:'normal',
+          frozen:0, frozenStr:'', total:0, collOp:null, revealed:0, indDir:null,
+          improvedTarget: S.improvedTarget, improvedTargetSet: true,
+        });
+        render();
+      }, 600);
+    }, 800);
+    return;
+  }
 
   // コレクティブ replacing フェーズ中はどのボタンでも次の桁を進める（= 含む）
   // 全桁揃い済みの場合は = のみ確定処理、それ以外は何もしない
@@ -811,6 +858,21 @@ $grid.addEventListener('pointerdown', e => {
   else if (a === 'pct')         inputPercent();
 });
 
+// 即興モード長押し: 短押しは pointerup で inputEquals
+$grid.addEventListener('pointerup', e => {
+  if (eqLongPressTimer !== null) {
+    clearTimeout(eqLongPressTimer);
+    eqLongPressTimer = null;
+    inputEquals();
+  }
+});
+$grid.addEventListener('pointercancel', e => {
+  if (eqLongPressTimer !== null) {
+    clearTimeout(eqLongPressTimer);
+    eqLongPressTimer = null;
+  }
+});
+
 // ────────────────────────────────────────────
 // 時計アイコン（モードインジケーター）
 // 日時モード: 3時方向、数字モード: 9時方向
@@ -820,8 +882,8 @@ const $mh = document.getElementById('mh');
 
 function setClockMode(isDateTime) {
   const cx = 12, cy = 12;
-  // 時針: 通常=6時(180°)、日時=3時(90°)、数字=9時(270°)
-  const hDeg = normalMode ? 180 : isDateTime ? 90 : 270;
+  // 時針: 通常=6時(180°)、即興=12時(0°)、日時=3時(90°)、数字=9時(270°)
+  const hDeg = normalMode ? 180 : improvedMode ? 0 : isDateTime ? 90 : 270;
   const hr = (hDeg * Math.PI / 180) - Math.PI / 2;
   $hh.setAttribute('x2', (cx + Math.cos(hr) * 4.2).toFixed(2));
   $hh.setAttribute('y2', (cy + Math.sin(hr) * 4.2).toFixed(2));
@@ -831,20 +893,24 @@ function setClockMode(isDateTime) {
 }
 setClockMode(activeIsDateTime);
 
-// 時計タップでモード切り替え（アイドル状態のみ）
-// サイクル: 6時(通常) → 9時(数字) → 3時(日時) → 6時(通常)…
+// 時計タップでモード切り替え
+// サイクル: 6時(通常) → 9時(数字) → 3時(日時) → 12時(即興) → 6時(通常)…
 const $clockBtn = document.querySelector('#top-bar .top-icon');
 $clockBtn.addEventListener('click', () => {
   if (normalMode) {
     // 6時 → 9時（数字フォース）
-    normalMode = false;
-    activeIsDateTime = false;
-  } else if (!activeIsDateTime) {
+    normalMode = false; improvedMode = false; activeIsDateTime = false;
+  } else if (!activeIsDateTime && !improvedMode) {
     // 9時 → 3時（日時フォース）
     activeIsDateTime = true;
+  } else if (activeIsDateTime) {
+    // 3時 → 12時（即興数字フォース）
+    activeIsDateTime = false; improvedMode = true;
+    S.improvedTarget = 0; S.improvedTargetSet = false;
   } else {
-    // 3時 → 6時（通常電卓）
-    normalMode = true;
+    // 12時 → 6時（通常電卓）
+    normalMode = true; improvedMode = false;
+    S.improvedTarget = 0; S.improvedTargetSet = false;
   }
   setClockMode(activeIsDateTime);
   // 算術状態（disp・firstVal・op・式履歴）はそのまま保持し、フォース固有の状態のみリセット
@@ -902,7 +968,8 @@ render();
   if (!('numberEqualsN'      in s)) CFG.numberEqualsN      = s.equalsN    ?? 1;
   if (!('datetimeEqualsN'    in s)) CFG.datetimeEqualsN    = s.equalsN    ?? 1;
 
-  normalMode = false;  // 設定読み込み時は必ず通常モードを解除してフォースモードへ
+  normalMode   = false;  // 設定読み込み時は必ず通常モードを解除してフォースモードへ
+  improvedMode = false;  // 即興モードは毎回リセット（ターゲットはライブ設定のため）
   activeIsDateTime = s.isDateTime ?? CFG.isDateTime;
   setClockMode(activeIsDateTime);
   try { localStorage.setItem('magic_cfg', JSON.stringify(CFG)); } catch(e) {}
