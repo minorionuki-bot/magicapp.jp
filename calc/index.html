@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v37</title>
+<title>Magic Calc v38</title>
 <!--
   設定はURLハッシュで渡す例:
   #dt=1&coll=0&eq=1&off=0&fY=1&fSY=1&fM=1&fD=1&fH=1&fMin=1&h24=1
@@ -811,19 +811,19 @@ $grid.addEventListener('pointerdown', e => {
   if (!btn) return;
   const a = btn.dataset.a;
 
-  // 即興モードでターゲット未設定時の = 長押し検知（800ms）
-  if (improvedMode && !S.improvedTargetSet && a === 'eq') {
+  // 即興モードで = 長押し検知（800ms）: replacing フェーズ中は除外
+  // ターゲット設定済みでも長押しで上書き可能
+  if (improvedMode && a === 'eq' && S.phase !== 'replacing') {
     eqLongPressTimer = setTimeout(() => {
       eqLongPressTimer = null;
       const target = parseFloat(S.disp);
       if (isNaN(target) || S.disp === '0') return;
       S.improvedTarget    = target;
       S.improvedTargetSet = true;
-      // オレンジ色で一瞬表示してからゼロにリセット
-      $main.style.color = '#FE9100';
-      render();
+      // グリッドアイコンを一瞬消してセット完了を伝える
+      $gridIcon.style.visibility = 'hidden';
       setTimeout(() => {
-        $main.style.color = '';
+        $gridIcon.style.visibility = '';
         Object.assign(S, {
           disp:'0', firstVal:null, op:null, sreset:false, dispIsTarget:false,
           liveExpr:'', histExpr:'', eqCount:0, hlOp:null, phase:'normal',
@@ -831,7 +831,7 @@ $grid.addEventListener('pointerdown', e => {
           improvedTarget: S.improvedTarget, improvedTargetSet: true,
         });
         render();
-      }, 600);
+      }, 500);
     }, 800);
     return;
   }
@@ -877,8 +877,9 @@ $grid.addEventListener('pointercancel', e => {
 // 時計アイコン（モードインジケーター）
 // 日時モード: 3時方向、数字モード: 9時方向
 // ────────────────────────────────────────────
-const $hh = document.getElementById('hh');
-const $mh = document.getElementById('mh');
+const $hh       = document.getElementById('hh');
+const $mh       = document.getElementById('mh');
+const $gridIcon = document.querySelectorAll('#top-bar .top-icon')[1];
 
 function setClockMode(isDateTime) {
   const cx = 12, cy = 12;
