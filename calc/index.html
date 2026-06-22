@@ -495,7 +495,7 @@ function inputEquals() {
 
   if (improvedMode && !S.improvedTargetSet) {
     const { result, second } = computeEquals();
-    S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
+    S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : fmtHist(second);
     S.disp     = fmtNum(result);
     S.liveExpr = '';
     afterEquals();
@@ -505,7 +505,7 @@ function inputEquals() {
 
   if (normalMode) {
     const { result, second } = computeEquals();
-    S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
+    S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : fmtHist(second);
     S.disp = fmtNum(result);
     S.liveExpr = '';
     afterEquals();
@@ -521,7 +521,7 @@ function inputEquals() {
       case 'normal': {
         const { result, second } = computeEquals();
         if (S.eqCount < activeEqualsN) {
-          S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
+          S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : fmtHist(second);
           S.disp = fmtNum(result);
           S.liveExpr = '';
           afterEquals();
@@ -565,7 +565,7 @@ function inputEquals() {
   } else {
     if (S.eqCount < activeEqualsN) {
       const { result, second } = computeEquals();
-      S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : '';
+      S.histExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : fmtHist(second);
       S.disp     = fmtNum(result);
       S.liveExpr = '';
       afterEquals();
