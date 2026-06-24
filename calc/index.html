@@ -645,7 +645,7 @@ function getLiveExpr() {
 }
 
 function getHistExpr() {
-  return (S.sreset && !S.op) ? S.histExpr : '';
+  return S.histExpr;
 }
 
 function addCommas(s) {
@@ -697,18 +697,17 @@ function render() {
     $main.textContent = live;
     $main.style.fontSize = mainFontSize(live);
     $main.style.wordSpacing = '-0.15em';
-    $hist.style.display = 'none';
   } else {
     $main.style.wordSpacing = '';
     const txt = formatDisplay(S.disp);
     $main.textContent = txt;
     $main.style.fontSize = mainFontSize(txt);
-    if (hist) {
-      $hist.textContent = hist;
-      $hist.style.display = 'block';
-    } else {
-      $hist.style.display = 'none';
-    }
+  }
+  if (hist) {
+    $hist.textContent = hist;
+    $hist.style.display = 'block';
+  } else {
+    $hist.style.display = 'none';
   }
   requestAnimationFrame(() => { $main.scrollLeft = $main.scrollWidth; });
 
