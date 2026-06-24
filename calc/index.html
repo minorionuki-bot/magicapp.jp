@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v41</title>
+<title>Magic Calc v42</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -282,7 +282,7 @@ function switchToPos(pos) {
 
 // 初期ポジション（12時 = 即興モード）
 switchToPos("12");
-console.log('[MagicCalc v40] initialized. currentPos:', currentPos, 'improvedMode:', improvedMode);
+console.log('[MagicCalc v42] initialized. currentPos:', currentPos, 'improvedMode:', improvedMode);
 
 // ────────────────────────────────────────────
 // 電卓の状態
@@ -457,6 +457,11 @@ function inputDigit(d) {
 }
 
 function inputOp(op) {
+  // = 直後に演算子を押したとき: 式履歴をクリア
+  if (S.sreset && S.op === null) {
+    S.histExpr = '';
+  }
+
   if (getActiveCollective() && S.phase === 'afterFirst') {
     S.collOp  = op;
     S.op      = op;
@@ -528,6 +533,7 @@ function inputEquals() {
           break;
         }
         S.disp      = fmtNum(result);
+        const trigExpr = S.liveExpr ? S.liveExpr + ' ' + fmtHist(second) : fmtHist(second);
         S.liveExpr  = '';
         S.frozenStr = getTargetStr();
         S.frozen    = parseFloat(S.frozenStr) || 0;
@@ -535,7 +541,7 @@ function inputEquals() {
         const shortfall = S.frozen - S.total;
         S.indDir   = shortfall >= 0 ? '+' : '−';
         S.revealed = 0;
-        S.histExpr = '';
+        S.histExpr = trigExpr;
         S.phase    = 'afterFirst';
         afterEquals();
         break;
