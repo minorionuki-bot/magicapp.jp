@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Magic Calc">
 <link rel="apple-touch-icon" href="icon.png">
-<title>Magic Calc v42</title>
+<title>Magic Calc v43</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -282,7 +282,7 @@ function switchToPos(pos) {
 
 // 初期ポジション（12時 = 即興モード）
 switchToPos("12");
-console.log('[MagicCalc v42] initialized. currentPos:', currentPos, 'improvedMode:', improvedMode);
+console.log('[MagicCalc v43] initialized. currentPos:', currentPos, 'improvedMode:', improvedMode);
 
 // ────────────────────────────────────────────
 // 電卓の状態
@@ -496,6 +496,19 @@ function inputOp(op) {
 }
 
 function inputEquals() {
+  // 末尾演算子（ダングリング）: 演算子を無視して現在の計算結果を確定
+  if (S.sreset && S.op !== null) {
+    let stripped = S.liveExpr;
+    for (const sym of [' +', ' −', ' ×', ' ÷']) {
+      if (stripped.endsWith(sym)) { stripped = stripped.slice(0, -sym.length); break; }
+    }
+    S.histExpr = stripped;
+    S.liveExpr = '';
+    afterEquals();
+    render();
+    return;
+  }
+
   S.eqCount++;
 
   if (improvedMode && !S.improvedTargetSet) {
