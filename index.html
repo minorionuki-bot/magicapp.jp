@@ -1,11 +1,179 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MagicCalc</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAGIC NUMBER – Pro Magic Calculator</title>
+  <meta name="description" content="プロのマジシャン・メンタリスト向け演技用電卓アプリ。どんな計算式でも、あなたが決めた数字が答えになる。">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #121212;
+      color: #fff;
+      font-family: -apple-system, 'Helvetica Neue', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+      text-align: center;
+    }
+
+    .logo {
+      width: min(320px, 80vw);
+      margin-bottom: 32px;
+    }
+
+    .tagline {
+      font-size: clamp(15px, 2.5vw, 18px);
+      color: #aaa;
+      line-height: 1.7;
+      max-width: 480px;
+      margin-bottom: 48px;
+    }
+
+    .tagline strong {
+      color: #fff;
+    }
+
+    .appstore-btn {
+      display: inline-block;
+      margin-bottom: 64px;
+    }
+
+    .appstore-btn img {
+      height: 52px;
+      opacity: 0.95;
+      transition: opacity .2s;
+    }
+
+    .appstore-btn:hover img { opacity: 1; }
+
+    .divider {
+      width: 48px;
+      height: 1px;
+      background: #333;
+      margin: 0 auto 40px;
+    }
+
+    .features {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-width: 400px;
+      width: 100%;
+      margin-bottom: 64px;
+      text-align: left;
+    }
+
+    .feature {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .feature-icon {
+      font-size: 22px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .feature-text strong {
+      display: block;
+      font-size: 15px;
+      color: #FE9100;
+      margin-bottom: 3px;
+    }
+
+    .feature-text span {
+      font-size: 13px;
+      color: #888;
+      line-height: 1.6;
+    }
+
+    footer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    footer a {
+      color: #555;
+      font-size: 13px;
+      text-decoration: none;
+      transition: color .2s;
+    }
+
+    footer a:hover { color: #FE9100; }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+    }
+
+    .contact {
+      font-size: 12px;
+      color: #444;
+    }
+  </style>
 </head>
 <body>
-<p>MagicCalc</p>
+
+  <img class="logo" src="logo.png" alt="MAGIC NUMBER">
+
+  <p class="tagline">
+    <strong>どんな計算式でも、あなたが決めた数字が答えになる。</strong><br>
+    プロのマジシャン・メンタリスト向け演技用電卓アプリ
+  </p>
+
+  <a class="appstore-btn" href="https://apps.apple.com/jp/app/id6780728531" target="_blank" rel="noopener">
+    <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store">
+  </a>
+
+  <div class="divider"></div>
+
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">🔢</div>
+      <div class="feature-text">
+        <strong>数字モード</strong>
+        <span>事前に設定した数字にフォース。観客がどう計算しても答えはひとつ。</span>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🕐</div>
+      <div class="feature-text">
+        <strong>時刻モード</strong>
+        <span>現在の日付・時刻を自然な計算結果として演出。</span>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">✨</div>
+      <div class="feature-text">
+        <strong>即興モード</strong>
+        <span>その場でフォース数字を設定。借りたお札や選ばれたカードにも対応。</span>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📱</div>
+      <div class="feature-text">
+        <strong>App Clip対応</strong>
+        <span>NFCやQRコードから即起動。観客のスマホにインストール不要。</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-links">
+      <a href="/privacy/">プライバシーポリシー</a>
+      <a href="mailto:iam@mmagicianminori.com">お問い合わせ</a>
+    </div>
+    <p class="contact">iam@mmagicianminori.com</p>
+    <p class="contact">© 2026 Minori Onuki</p>
+  </footer>
+
 </body>
 </html>
