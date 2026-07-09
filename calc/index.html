@@ -874,7 +874,7 @@ render();
 // ────────────────────────────────────────────
 // Supabase から設定を取得して適用
 // ────────────────────────────────────────────
-(async () => {
+async function applySupabaseSettings(resetCalc) {
   let uuid = new URLSearchParams(location.search).get('id');
   if (uuid) {
     try { localStorage.setItem('magic_uuid', uuid); } catch(e) {}
@@ -947,10 +947,24 @@ render();
     switchToPos(startPos);
   }
 
-  S.improvedTarget = 0; S.improvedTargetSet = false;
   setClockMode();
-  clear();
-})();
+  if (resetCalc) {
+    S.improvedTarget = 0; S.improvedTargetSet = false;
+    clear();
+  } else {
+    render();
+  }
+}
+
+// 初回ロード時
+applySupabaseSettings(true);
+
+// スタンドアロンモード（ホーム画面追加）でバックグラウンドから復帰した際に再取得
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    applySupabaseSettings(false);
+  }
+});
 </script>
 </body>
 </html>
