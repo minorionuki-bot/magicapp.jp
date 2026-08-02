@@ -585,6 +585,7 @@ function inputEquals() {
         S.revealed  = 0;
         S.phase     = 'normal';
         S.eqCount   = 0;
+        S.undoStack = [];   // 演出区間より前のアンドゥ履歴は持ち越さない
         afterEquals();
         break;
       }
