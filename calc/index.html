@@ -306,6 +306,7 @@ const S = {
   indDir       : null,
   improvedTarget    : 0,
   improvedTargetSet : false,
+  undoStack         : [],   // バックスペース用: 演算子を押すたびに直前の状態を1件積む
 };
 
 // ────────────────────────────────────────────
@@ -446,6 +447,7 @@ function inputDigit(d) {
       S.histExpr     = '';
       S.eqCount      = 0;
       S.dispIsTarget = false;
+      S.undoStack    = [];
     }
     S.disp = d;
     S.sreset = false;
@@ -471,6 +473,12 @@ function inputOp(op) {
     S.liveExpr = fmtHist(S.total) + ' ' + op;
     render(); return;
   }
+
+  // バックスペースで1手ずつ取り消せるよう、演算子を押す直前の状態を保存
+  S.undoStack.push({
+    disp: S.disp, firstVal: S.firstVal, op: S.op,
+    hlOp: S.hlOp, sreset: S.sreset, liveExpr: S.liveExpr,
+  });
 
   const cur = parseFloat(S.disp) || 0;
 
@@ -603,14 +611,16 @@ function inputDecimal() {
 }
 
 function inputBack() {
+  // 演算子保留中のとき：直前に演算子を押す前の状態まで1手戻す
   if (S.sreset) {
-    if (S.op !== null) {
-      S.disp     = fmtNum(S.firstVal ?? 0);
-      S.op       = null;
-      S.hlOp     = null;
-      S.liveExpr = '';
-      S.firstVal = null;
-      S.sreset   = false;
+    if (S.op !== null && S.undoStack.length > 0) {
+      const prev = S.undoStack.pop();
+      S.disp     = prev.disp;
+      S.firstVal = prev.firstVal;
+      S.op       = prev.op;
+      S.hlOp     = prev.hlOp;
+      S.sreset   = prev.sreset;
+      S.liveExpr = prev.liveExpr;
       render();
     }
     return;
@@ -619,10 +629,10 @@ function inputBack() {
     S.disp = S.disp.slice(0, -1);
     if (S.disp === '-') S.disp = '0';
   } else {
+    // 1桁になったとき: 常に "0" に戻す
+    S.disp = '0';
     if (S.op !== null) {
       S.sreset = true;
-    } else {
-      S.disp = '0';
     }
   }
   render();
@@ -645,7 +655,7 @@ function clear() {
     disp:'0', firstVal:null, op:null, sreset:false, dispIsTarget:false,
     liveExpr:'', histExpr:'', eqCount:0, hlOp:null,
     phase:'normal', frozen:0, frozenStr:'', total:0, collOp:null,
-    revealed:0, indDir:null,
+    revealed:0, indDir:null, undoStack:[],
     // 即興モード中はターゲットを保持（AC後も再利用できる）
     improvedTarget:    improvedMode ? S.improvedTarget    : 0,
     improvedTargetSet: improvedMode ? S.improvedTargetSet : false,
