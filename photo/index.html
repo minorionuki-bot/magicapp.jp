@@ -30,6 +30,11 @@
   #frame { position: absolute; left: 0; top: 0; border: 1.5px solid var(--yellow); border-radius: 10px;
     opacity: 0; pointer-events: none; transition: opacity .3s ease-out, transform .3s ease-out, width .3s ease-out, height .3s ease-out; }
   #frame.on { opacity: 1; }
+  /* タップした場所に出すピント合わせの四角（標準のカメラと同じ見た目） */
+  #focus { position: absolute; width: 76px; height: 76px; border: 1px solid var(--yellow); pointer-events: none;
+    transform: scale(1.4); transition: transform .25s ease-out, opacity .4s ease-in; }
+  #focus.settled { transform: scale(1); }
+  #focus.faded { opacity: .35; }
   #message { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px;
     text-align: center; color: #aaa; font-size: 15px; line-height: 1.6; }
   #bottom { flex: 1 0 150px; display: flex; flex-direction: column; justify-content: center; gap: 18px;

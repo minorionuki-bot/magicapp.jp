@@ -424,20 +424,26 @@ export function downscale(image, maxSide) {
  * 写真の中の白紙カードの四隅（左上・右上・右下・左下、写真の画素座標）。見つからなければ null。
  * small は長辺1200pxに縮めた画像、scale はその縮小率（small の幅 ÷ 元の幅）
  */
-export function findCard(small, scale) {
+export function findCard(small, scale, hint = null) {
   const w = small.width, h = small.height, px = small.data;
   const lum = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) lum[i] = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2];
   gaussianBlur(lum, w, h, 1.2);
   const edges = edgeMap(lum, w, h);
 
-  let best = null;
+  let best = null, bestIsTapped = false;
   const seeds = whiteBlobSeeds(small, edges);
   debugLog('white blob seeds', seeds.length);
+  // hint：タップで示された「カードはここ」（写真に対する割合 0〜1）。理由は Swift 側
+  const hintPoint = hint ? { x: hint.x * w, y: hint.y * h } : null;
+  let tapSeed = hintPoint ? tappedSeed(small, edges, hintPoint) : null;
+  if (tapSeed) seeds.unshift(tapSeed);
   for (const q of seeds) {
     const ps = paperScore(q, small);
-    debugLog('seed', q.map((p) => `[${Math.round(p.x / scale)},${Math.round(p.y / scale)}]`).join(' '), 'paper', ps);
-    if (!ps || ps.frac <= 0.6) continue;
+    const hinted = hintPoint ? contains(q, hintPoint) : false;
+    debugLog('seed', q.map((p) => `[${Math.round(p.x / scale)},${Math.round(p.y / scale)}]`).join(' '), 'paper', ps, hinted ? '(tapped)' : '');
+    // 内側が白い紙（白紙・数字札）か、縁が白い紙（絵札）。タップで示された候補は基準を緩める
+    if (!ps || !(ps.inner > 0.6 || ps.rim > 0.75 || (hinted && Math.max(ps.inner, ps.rim) > 0.3))) continue;
     const region = regionQuad(q, small, edges, ps.paper);
     debugLog('  region', region && { fill: region.fill, area: region.area });
     if (!region) continue;
@@ -451,13 +457,21 @@ export function findCard(small, scale) {
     const touchesBorder = region.quad.some((p) => p.x < margin || p.y < margin || p.x > w - margin || p.y > h - margin);
     debugLog('  quad', region.quad.map((p) => `[${Math.round(p.x / scale)},${Math.round(p.y / scale)}]`).join(' '), 'aspect', aspect.toFixed(2), 'border', touchesBorder);
     // 指で角が欠けた、印刷されたカードでも通るように 0.65。中央に近いものを優先する（理由は Swift 側）
-    if (region.fill <= 0.65 || touchesBorder || aspect < 1.1 || aspect > 1.7) continue;
+    const tapped = hintPoint ? contains(region.quad, hintPoint) : false;
+    if (region.fill <= (tapped ? 0.5 : 0.65) || touchesBorder || aspect < 1.1 || aspect > 1.7) continue;
     const likeCard = Math.exp(-Math.pow((aspect - 1.4) / 0.2, 2));
     const cx = region.quad.reduce((a, p) => a + p.x, 0) / 4, cy = region.quad.reduce((a, p) => a + p.y, 0) / 4;
     const off = Math.hypot(cx - w / 2, cy - h / 2) / (Math.hypot(w, h) / 2);
     const nearCenter = Math.exp(-Math.pow(off / 0.5, 2));
-    const score = region.area * Math.pow(region.fill, 4) * likeCard * nearCenter;
-    if (!best || score > best.score) best = { score, quad: region.quad, paper: ps.paper };
+    const score = region.area * Math.pow(region.fill, 4) * likeCard * nearCenter * (tapped ? 100 : 1);
+    if (!best || score > best.score) { best = { score, quad: region.quad, paper: ps.paper }; bestIsTapped = tapped; }
+  }
+  // 絵札は紙が縁の細い輪だけなので、塗り広げても四角が埋まらない。タップの近くで白い縁が四角く続いていたら
+  // その四角を使う。タップがなく何も見つからないときは、画面の真ん中をタップしたものとして探す（理由は Swift 側）
+  if (!hintPoint && !best) tapSeed = tappedSeed(small, edges, { x: w / 2, y: h / 2 });
+  if (!bestIsTapped && (hintPoint || !best) && tapSeed) {
+    const ps = paperScore(tapSeed, small);
+    if (ps) { debugLog('use tapped seed as is'); best = { score: 0, quad: tapSeed, paper: ps.paper }; }
   }
   if (!best) return null;
 
@@ -516,27 +530,107 @@ function quadPoint(q, u, v) {
   return add(top, mul(sub(bottom, top), v));
 }
 
-/** 四角形の内側が白い紙らしい割合と、紙の明るさ */
+/** 四角形の内側（inner）と縁の帯（rim）が白い紙らしい割合と、紙の明るさ */
 function paperScore(q, small) {
   const px = small.data;
-  let hits = 0, total = 0;
-  const bright = [];
+  const sample = (u, v) => {
+    const p = quadPoint(q, u, v);
+    const x = Math.floor(p.x), y = Math.floor(p.y);
+    if (x < 0 || y < 0 || x >= small.width || y >= small.height) return null;
+    const k = 4 * (y * small.width + x);
+    const r = px[k], g = px[k + 1], b = px[k + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return { white: mx > 110 && (mx - mn) / mx < 0.22, lum: 0.299 * r + 0.587 * g + 0.114 * b };
+  };
+  let innerHits = 0, innerTotal = 0, rimHits = 0, rimTotal = 0;
+  const white = [], all = [];
   for (let i = 0; i < 12; i++) {
     for (let j = 0; j < 12; j++) {
-      const p = quadPoint(q, 0.2 + 0.6 * i / 11, 0.2 + 0.6 * j / 11);
-      const x = Math.floor(p.x), y = Math.floor(p.y);
-      if (x < 0 || y < 0 || x >= small.width || y >= small.height) continue;
-      const k = 4 * (y * small.width + x);
-      const r = px[k], g = px[k + 1], b = px[k + 2];
-      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-      total++;
-      if (mx > 110 && (mx - mn) / mx < 0.22) hits++;
-      bright.push(0.299 * r + 0.587 * g + 0.114 * b);
+      const s = sample(0.2 + 0.6 * i / 11, 0.2 + 0.6 * j / 11);
+      if (!s) continue;
+      innerTotal++;
+      all.push(s.lum);
+      if (s.white) { innerHits++; white.push(s.lum); }
     }
   }
-  if (!total) return null;
-  bright.sort((a, b) => a - b);
-  return { frac: hits / total, paper: bright[bright.length >> 1] };
+  for (let k = 0; k < 16; k++) {
+    const t = 0.15 + 0.7 * k / 15;
+    for (const [u, v] of [[t, 0.06], [t, 0.94], [0.06, t], [0.94, t]]) {
+      const s = sample(u, v);
+      if (!s) continue;
+      rimTotal++;
+      if (s.white) { rimHits++; white.push(s.lum); }
+    }
+  }
+  if (!innerTotal || !rimTotal) return null;
+  const source = (white.length >= 8 ? white : all).sort((a, b) => a - b);
+  return { inner: innerHits / innerTotal, rim: rimHits / rimTotal, paper: source[source.length >> 1] };
+}
+
+/** 点が四角形の内側にあるか */
+function contains(q, p) {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const k = cross(sub(q[(i + 1) % 4], q[i]), sub(p, q[i]));
+    if (sign === 0) sign = k; else if (k * sign < 0) return false;
+  }
+  return true;
+}
+
+/** タップの近くの白い塊（境目で区切ったもの）を近い順につなぎ、縁が四角く続く組み合わせを探す（理由は Swift 側） */
+function tappedSeed(small, edges, hint) {
+  const w = small.width, h = small.height, px = small.data;
+  const mask = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    if (edges[i]) continue;
+    const r = px[4 * i], g = px[4 * i + 1], b = px[4 * i + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx > 100 && (mx - mn) / mx < 0.22) mask[i] = 1;
+  }
+  const reach = 0.3 * Math.max(w, h);
+  const near = [];
+  for (const blob of regions(mask, w, h, Math.max(50, Math.floor(w * h / 4000)))) {
+    let cx = 0, cy = 0;
+    for (const i of blob) { cx += i % w; cy += (i / w) | 0; }
+    const d = Math.hypot(cx / blob.length - hint.x, cy / blob.length - hint.y);
+    if (d < reach) near.push({ d, blob });
+  }
+  near.sort((a, b) => a.d - b.d);
+  let best = null;
+  const union = new Uint8Array(w * h);
+  const pts = [];
+  for (const { blob } of near.slice(0, 8)) {
+    for (const i of blob) { union[i] = 1; pts.push({ x: (i % w) + 0.5, y: ((i / w) | 0) + 0.5 }); }
+    const rect = minAreaRect(pts);
+    if (!rect) continue;
+    const a = len(sub(rect[1], rect[0])), b = len(sub(rect[3], rect[0]));
+    if (Math.min(a, b) <= 8 || !contains(rect, hint)) continue;
+    const aspect = Math.max(a, b) / Math.min(a, b);
+    const rim = rimCoverage(union, w, h, rect);
+    if (aspect <= 1.1 || aspect >= 1.8 || rim <= 0.7) continue;
+    const score = rim * Math.exp(-Math.pow((aspect - 1.4) / 0.2, 2));
+    if (!best || score > best.score) best = { score, quad: rect };
+  }
+  debugLog('tapped seed', best && best.quad.map((p) => `[${Math.round(p.x)},${Math.round(p.y)}]`).join(' '));
+  return best ? best.quad : null;
+}
+
+/** 四角の縁（内側2〜8%）に沿って印のある画素が続いている割合 */
+function rimCoverage(mask, w, h, q) {
+  let hit = 0, total = 0;
+  for (let side = 0; side < 4; side++) {
+    for (let k = 0; k < 24; k++) {
+      const t = (k + 0.5) / 24;
+      total++;
+      for (let d = 0.02; d <= 0.0801; d += 0.01) {
+        const pt = side === 0 ? quadPoint(q, t, d) : side === 1 ? quadPoint(q, 1 - d, t)
+          : side === 2 ? quadPoint(q, t, 1 - d) : quadPoint(q, d, t);
+        const x = Math.floor(pt.x), y = Math.floor(pt.y);
+        if (x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x]) { hit++; break; }
+      }
+    }
+  }
+  return hit / total;
 }
 
 /** 候補の中心から「紙らしい画素」を境目を越えずに塗り広げ、その輪郭に4本の直線を当てはめる */
@@ -561,6 +655,21 @@ function regionQuad(q, small, edges, paper) {
       if (region[k] || !isPaper(k)) continue;
       region[k] = 1;
       stack.push(k);
+    }
+  }
+  // 絵札は中央が絵なので、中央から塗り広げられない。そのときは縁の帯（端から6%内側）からも始める
+  if (stack.length < 3) {
+    for (let k = 0; k < 16; k++) {
+      const t = 0.15 + 0.7 * k / 15;
+      for (const [u, v] of [[t, 0.06], [t, 0.94], [0.06, t], [0.94, t]]) {
+        const p = quadPoint(q, u, v);
+        const x = Math.floor(p.x), y = Math.floor(p.y);
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const i = y * w + x;
+        if (region[i] || !isPaper(i)) continue;
+        region[i] = 1;
+        stack.push(i);
+      }
     }
   }
   let area = 0;
@@ -757,83 +866,135 @@ export function eraseInk(quad, photo) {
   const Rs = R.slice(), Gs = G.slice(), Bs = B.slice();
   gaussianBlur(Rs, cw, ch, 1.5); gaussianBlur(Gs, cw, ch, 1.5); gaussianBlur(Bs, cw, ch, 1.5);
 
-  // インク：鮮やかな赤（指は赤さ0.32〜0.40、インクは0.7〜0.9）か黒。肌は紙の色から外れて黄みがある
-  let core = new Uint8Array(n);
-  const weak = new Uint8Array(n);
-  const skinColor = new Uint8Array(n);
-  for (let i = 0; i < n; i++) {
-    const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
-    const r = Rs[i] / s, g = Gs[i] / s, b = Bs[i] / s;
-    const redness = r - Math.max(g, b);
-    const isInk = redness > 0.45 || lum[i] < 0.35 * paperEst[i];
-    if (isInk && inside[i]) core[i] = 1;
-    // 反射で灰色に写った黒いマーク：はっきりしたインクにつながっているときだけ加える（理由は Swift 側）
-    if (!isInk && inside[i] && lum[i] < 0.6 * paperEst[i] && redness < 0.03) weak[i] = 1;
-    const dr = r - pc[0], dg = g - pc[1], db = b - pc[2];
-    // 肌はカードの内側だけで見る（背景が肌に近い色だと、カード全体が「手の中の穴」として埋まった。理由は Swift 側）
-    if (!isInk && inside[i] && Math.sqrt(dr * dr + dg * dg + db * db) > 0.06 && g - b > 0.03) skinColor[i] = 1;
-  }
-  erode(core, cw, ch, 1);
-  dilate(core, cw, ch, 1);
-  const both = core.slice();
-  for (let i = 0; i < n; i++) if (weak[i]) both[i] = 1;
-  for (const blob of regions(both, cw, ch, 1)) {
-    if (blob.some((i) => core[i])) for (const i of blob) core[i] = 1;
-  }
-  // マークの内側が反射で明るくなった「穴」も埋めて、マークごと消す
-  fillEnclosedHoles(core, cw, ch);
-  for (let i = 0; i < n; i++) if (!inside[i]) core[i] = 0;
-
-  // 肌は大きな塊だけ。すき間と穴を埋めて「手の形」にし、その中は塗らない
-  const skin = keepLargeRegions(skinColor, cw, ch, Math.floor(insideCount / 200));
-  const rr = Math.max(5, Math.floor(cardW * 0.03));
-  dilate(skin, cw, ch, rr);
-  erode(skin, cw, ch, rr);
-  fillEnclosedHoles(skin, cw, ch);
-  dilate(skin, cw, ch, 1);
-
-  // 手に接している塊は、鮮やかな赤か、赤みのない黒のときだけインクとする
-  const handEdge = skin.slice();
-  dilate(handEdge, cw, ch, 2);
-  const outsideHand = core.slice();
-  for (let i = 0; i < n; i++) if (skin[i]) outsideHand[i] = 0;
-  core = new Uint8Array(n);
-  for (const blob of regions(outsideHand, cw, ch, 1)) {
-    let touches = false, sr = 0, sg = 0, sb = 0;
-    for (const i of blob) {
-      if (handEdge[i]) touches = true;
-      const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
-      sr += Rs[i] / s; sg += Gs[i] / s; sb += Bs[i] / s;
-    }
-    const redness = (sr - Math.max(sg, sb)) / blob.length;
-    if (!touches || redness > 0.55 || redness < 0.2) for (const i of blob) core[i] = 1;
-  }
-
-  // インクがほとんどない（白紙のカード）なら何もしない
-  let inkCount = 0;
-  for (let i = 0; i < n; i++) if (core[i]) inkCount++;
-  debugLog('ink pixels', inkCount, 'of', insideCount);
-  if (inkCount <= insideCount / 200) return false;
-
-  // マークよりひと回り大きく消す。手の形の中は塗らないが、はっきり赤いインクの色の画素は消す
-  const grow = Math.max(6, Math.floor(cardW * 0.02));
-  const erase = core.slice();
-  dilate(erase, cw, ch, grow);
-  for (let i = 0; i < n; i++) if (skin[i] || !inside[i]) erase[i] = 0;
-  const strongRed = new Uint8Array(n);
+  // 絵札：真ん中がほとんど紙でなければ絵札とみなし、紙の色でも手でもないものを消す（理由は Swift 側）
+  const paperLike = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     if (!inside[i]) continue;
     const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
-    if ((Rs[i] - Math.max(Gs[i], Bs[i])) / s > 0.55) strongRed[i] = 1;
+    const dr = Rs[i] / s - pc[0], dg = Gs[i] / s - pc[1], db = Bs[i] / s - pc[2];
+    if (lum[i] > 0.55 * paperEst[i] && Math.sqrt(dr * dr + dg * dg + db * db) < 0.07) paperLike[i] = 1;
   }
-  dilate(strongRed, cw, ch, Math.max(2, Math.floor(grow / 4)));
-  for (let i = 0; i < n; i++) if (strongRed[i] && inside[i] && !skinColor[i]) erase[i] = 1;
-  const band = core.slice();
-  dilate(band, cw, ch, 2 * grow);
+  const hand = handReachingIn(Rs, Gs, Bs, inside, paperLike, pc, cw, ch, cardW);
+  let center = 0, centerArt = 0;
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const i = y * cw + x;
+      if (!inside[i] || hand[i]) continue;
+      const [u, v] = toCard(x + 0.5, y + 0.5);
+      if (u <= 0.3 * CARD_W || u >= 0.7 * CARD_W || v <= 0.3 * CARD_H || v >= 0.7 * CARD_H) continue;
+      center++;
+      if (!paperLike[i]) centerArt++;
+    }
+  }
+  const isCourt = center > 500 && centerArt > 0.6 * center;
+  debugLog('court?', isCourt, 'center art', centerArt, 'of', center);
+
+  let erase, skin, band;
+  if (isCourt) {
+    skin = hand;
+    const art = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (inside[i] && !paperLike[i] && !hand[i]) art[i] = 1;
+    // 消すのは絵の枠（いちばん大きな塊）と、隅の数字とマーク（赤か黒のインク）だけ
+    erase = new Uint8Array(n);
+    const blobs = regions(art, cw, ch, 20);
+    const largest = blobs.reduce((m, b) => Math.max(m, b.length), 0);
+    for (const blob of blobs) {
+      let inky = 0;
+      for (const i of blob) {
+        const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
+        if ((Rs[i] - Math.max(Gs[i], Bs[i])) / s > 0.45 || lum[i] < 0.35 * paperEst[i]) inky++;
+      }
+      if (blob.length === largest || inky * 3 > blob.length) for (const i of blob) erase[i] = 1;
+    }
+    const r = Math.max(3, Math.floor(cardW * 0.01));
+    dilate(erase, cw, ch, r);
+    erode(erase, cw, ch, r);
+    fillEnclosedHoles(erase, cw, ch);
+    dilate(erase, cw, ch, Math.max(3, Math.floor(cardW * 0.008)));
+    for (let i = 0; i < n; i++) if (skin[i] || !inside[i]) erase[i] = 0;
+    band = erase.slice();
+    dilate(band, cw, ch, Math.max(4, Math.floor(cardW * 0.01)));
+  } else {
+    // インク：鮮やかな赤（指は赤さ0.32〜0.40、インクは0.7〜0.9）か黒。肌は紙の色から外れて黄みがある
+    let core = new Uint8Array(n);
+    const weak = new Uint8Array(n);
+    const skinColor = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
+      const r = Rs[i] / s, g = Gs[i] / s, b = Bs[i] / s;
+      const redness = r - Math.max(g, b);
+      const isInk = redness > 0.45 || lum[i] < 0.35 * paperEst[i];
+      if (isInk && inside[i]) core[i] = 1;
+      // 反射で灰色に写った黒いマーク：はっきりしたインクにつながっているときだけ加える（理由は Swift 側）
+      if (!isInk && inside[i] && lum[i] < 0.6 * paperEst[i] && redness < 0.03) weak[i] = 1;
+      const dr = r - pc[0], dg = g - pc[1], db = b - pc[2];
+      // 肌はカードの内側だけで見る（背景が肌に近い色だと、カード全体が「手の中の穴」として埋まった。理由は Swift 側）
+      if (!isInk && inside[i] && Math.sqrt(dr * dr + dg * dg + db * db) > 0.06 && g - b > 0.03) skinColor[i] = 1;
+    }
+    erode(core, cw, ch, 1);
+    dilate(core, cw, ch, 1);
+    const both = core.slice();
+    for (let i = 0; i < n; i++) if (weak[i]) both[i] = 1;
+    for (const blob of regions(both, cw, ch, 1)) {
+      if (blob.some((i) => core[i])) for (const i of blob) core[i] = 1;
+    }
+    // マークの内側が反射で明るくなった「穴」も埋めて、マークごと消す
+    fillEnclosedHoles(core, cw, ch);
+    for (let i = 0; i < n; i++) if (!inside[i]) core[i] = 0;
+
+    // 肌は大きな塊だけ。すき間と穴を埋めて「手の形」にし、その中は塗らない
+    skin = keepLargeRegions(skinColor, cw, ch, Math.floor(insideCount / 200));
+    const rr = Math.max(5, Math.floor(cardW * 0.03));
+    dilate(skin, cw, ch, rr);
+    erode(skin, cw, ch, rr);
+    fillEnclosedHoles(skin, cw, ch);
+    dilate(skin, cw, ch, 1);
+
+    // 手に接している塊は、鮮やかな赤か、赤みのない黒のときだけインクとする
+    const handEdge = skin.slice();
+    dilate(handEdge, cw, ch, 2);
+    const outsideHand = core.slice();
+    for (let i = 0; i < n; i++) if (skin[i]) outsideHand[i] = 0;
+    core = new Uint8Array(n);
+    for (const blob of regions(outsideHand, cw, ch, 1)) {
+      let touches = false, sr = 0, sg = 0, sb = 0;
+      for (const i of blob) {
+        if (handEdge[i]) touches = true;
+        const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
+        sr += Rs[i] / s; sg += Gs[i] / s; sb += Bs[i] / s;
+      }
+      const redness = (sr - Math.max(sg, sb)) / blob.length;
+      if (!touches || redness > 0.55 || redness < 0.2) for (const i of blob) core[i] = 1;
+    }
+
+    // インクがほとんどない（白紙のカード）なら何もしない
+    let inkCount = 0;
+    for (let i = 0; i < n; i++) if (core[i]) inkCount++;
+    debugLog('ink pixels', inkCount, 'of', insideCount);
+    if (inkCount <= insideCount / 200) return false;
+
+    // マークよりひと回り大きく消す。手の形の中は塗らないが、はっきり赤いインクの色の画素は消す
+    const grow = Math.max(6, Math.floor(cardW * 0.02));
+    erase = core.slice();
+    dilate(erase, cw, ch, grow);
+    for (let i = 0; i < n; i++) if (skin[i] || !inside[i]) erase[i] = 0;
+    const strongRed = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      if (!inside[i]) continue;
+      const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
+      if ((Rs[i] - Math.max(Gs[i], Bs[i])) / s > 0.55) strongRed[i] = 1;
+    }
+    dilate(strongRed, cw, ch, Math.max(2, Math.floor(grow / 4)));
+    for (let i = 0; i < n; i++) if (strongRed[i] && inside[i] && !skinColor[i]) erase[i] = 1;
+    band = core.slice();
+    dilate(band, cw, ch, 2 * grow);
+
+  }
 
   // 照明：消す範囲だけを除いたすぐ近くの紙から、なだらかに推測する。穴が大きいところは広く見る
   const nearClean = new Float32Array(n);
-  for (let i = 0; i < n; i++) if (inside[i] && !erase[i] && !skin[i]) nearClean[i] = 1;
+  // 絵札では、消さなかったところにも絵のふちが残っているので、紙の色の画素だけから推測する
+  for (let i = 0; i < n; i++) if (inside[i] && !erase[i] && !skin[i] && (!isCourt || paperLike[i])) nearClean[i] = 1;
   const fillR = new Float32Array(n), fillG = new Float32Array(n), fillB = new Float32Array(n);
   const filled = new Uint8Array(n);
   for (const sigma of [cardW / 40, cardW / 15, cardW / 6, cardW / 2]) {
@@ -848,11 +1009,34 @@ export function eraseInk(quad, photo) {
     }
     if (!missing) break;
   }
+  // 絵札は消す範囲が広いので、縁の紙の色と明るさに、カード全体でなめらかな面（2次式）を当てはめて埋める
+  if (isCourt) {
+    const samples = [];
+    for (let i = 0; i < n; i += 5) if (nearClean[i]) samples.push([(i % cw) / cw, ((i / cw) | 0) / ch, R[i], G[i], B[i]]);
+    const cr = samples.length > 50 && fitQuadratic(samples, 2);
+    const cg = cr && fitQuadratic(samples, 3);
+    const cb = cg && fitQuadratic(samples, 4);
+    if (cb) {
+      const at = (c, x, y) => Math.max(0, c[0] + c[1] * x + c[2] * y + c[3] * x * x + c[4] * x * y + c[5] * y * y);
+      for (let i = 0; i < n; i++) {
+        if (!erase[i]) continue;
+        const x = (i % cw) / cw, y = ((i / cw) | 0) / ch;
+        fillR[i] = at(cr, x, y); fillG[i] = at(cg, x, y); fillB[i] = at(cb, x, y);
+        filled[i] = 1;
+      }
+    }
+  }
+  // それでも近くに紙が見つからないところは、紙の色と明るさの目安で埋める
+  for (let i = 0; i < n; i++) {
+    if (filled[i]) continue;
+    const l = paperEst[i] > 0 ? paperEst[i] : brightPaper;
+    fillR[i] = pc[0] * 3 * l; fillG[i] = pc[1] * 3 * l; fillB[i] = pc[2] * 3 * l;
+  }
 
   // 布目：きれいな紙の「明るさ ÷ 照明」の揺れを、少しずらした位置から写す
   const resid = new Float32Array(n), cleanTex = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    if (!inside[i] || band[i] || skin[i]) continue;
+    if (!inside[i] || band[i] || skin[i] || (isCourt && !paperLike[i])) continue;
     const il = 0.2126 * fillR[i] + 0.7152 * fillG[i] + 0.0722 * fillB[i];
     resid[i] = lum[i] / Math.max(il, 1e-4) - 1;
     cleanTex[i] = 1;
@@ -861,7 +1045,7 @@ export function eraseInk(quad, photo) {
   const step = Math.floor(cardW * 0.13);
   const shifts = [];
   for (let k2 = 1; k2 <= 5; k2++) { const st = k2 * step; shifts.push([st, 0], [-st, 0], [0, st], [0, -st], [st, st], [-st, -st]); }
-  for (const [dx, dy] of shifts) {
+  for (const [dx, dy] of (isCourt ? [] : shifts)) {
     for (let y = 0; y < ch; y++) {
       const sy = y - dy;
       if (sy < 0 || sy >= ch) continue;
@@ -891,6 +1075,57 @@ export function eraseInk(quad, photo) {
     }
   }
   return true;
+}
+
+/** 手：カードの外から内側へ入り込んでいる肌色の塊（絵札の絵は白い縁を越えない。理由は Swift 側） */
+function handReachingIn(Rs, Gs, Bs, inside, paperLike, pc, w, h, cardW) {
+  const n = w * h;
+  const skinColor = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (paperLike[i]) continue;
+    const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
+    const r = Rs[i] / s, g = Gs[i] / s, b = Bs[i] / s;
+    const dr = r - pc[0], dg = g - pc[1], db = b - pc[2];
+    if (Math.sqrt(dr * dr + dg * dg + db * db) > 0.04 && r - g > 0.02 && g - b > 0.015 && r - Math.max(g, b) < 0.45) skinColor[i] = 1;
+  }
+  const hand = new Uint8Array(n);
+  for (const blob of regions(skinColor, w, h, Math.floor(n / 500))) {
+    let inCount = 0, outCount = 0;
+    for (const i of blob) { if (inside[i]) inCount++; else outCount++; }
+    if (inCount <= 200 || outCount <= 200) continue;
+    for (const i of blob) if (inside[i]) hand[i] = 1;
+  }
+  const r = Math.max(5, Math.floor(cardW * 0.03));
+  dilate(hand, w, h, r);
+  erode(hand, w, h, r);
+  fillEnclosedHoles(hand, w, h);
+  dilate(hand, w, h, 1);
+  return hand;
+}
+
+/** 点 [x, y, ...値] の値（列 col）に 2次式 c0 + c1 x + c2 y + c3 x² + c4 xy + c5 y² を最小二乗で当てはめる */
+function fitQuadratic(pts, col) {
+  const A = Array.from({ length: 6 }, () => new Float64Array(7));
+  for (const p of pts) {
+    const x = p[0], y = p[1], v = p[col];
+    const f = [1, x, y, x * x, x * y, y * y];
+    for (let r = 0; r < 6; r++) {
+      for (let c = 0; c < 6; c++) A[r][c] += f[r] * f[c];
+      A[r][6] += f[r] * v;
+    }
+  }
+  for (let c0 = 0; c0 < 6; c0++) {
+    let piv = c0;
+    for (let r = c0 + 1; r < 6; r++) if (Math.abs(A[r][c0]) > Math.abs(A[piv][c0])) piv = r;
+    if (Math.abs(A[piv][c0]) <= 1e-9) return null;
+    [A[c0], A[piv]] = [A[piv], A[c0]];
+    for (let r = 0; r < 6; r++) {
+      if (r === c0) continue;
+      const k = A[r][c0] / A[c0][c0];
+      for (let c = c0; c < 7; c++) A[r][c] -= k * A[c0][c];
+    }
+  }
+  return Array.from({ length: 6 }, (_, r) => A[r][6] / A[r][r]);
 }
 
 // MARK: - 合成

@@ -126,6 +126,7 @@ async function startCamera() {
 
 $('flip').onclick = () => {
   front = !front;
+  tapHint = null;
   storage('front', front ? '1' : '0');
   live = null;
   showFrame();
@@ -136,6 +137,38 @@ startCamera();
 };
 
 // MARK: 撮る前の枠（映像を1秒に5回ほど取り出して、撮影時と同じ検出にかける）
+
+// 画面をタップして示した「カードはここ」。映像に対する割合（鏡像にしない向き＝検出と保存する写真の向き）。
+// ブラウザではピントは動かせないので、場所の手がかりにだけ使う。カードを動かしたあとまで古い場所を使わないよう30秒で切る
+let tapHint = null;   // { x, y, at }
+const currentHint = () => (tapHint && performance.now() - tapHint.at < 30000 ? { x: tapHint.x, y: tapHint.y } : null);
+
+preview.addEventListener('click', (e) => {
+  if (!video.videoWidth) return;
+  const rect = preview.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const W = rect.width, H = rect.height, aspect = video.videoWidth / video.videoHeight;
+  const scale = Math.max(W / aspect, H);
+  const shownW = aspect * scale, shownH = scale;
+  let x = (px - (W - shownW) / 2) / shownW;
+  const y = (py - (H - shownH) / 2) / shownH;
+  if (front) x = 1 - x;   // プレビューは鏡像
+  tapHint = { x, y, at: performance.now() };
+  showFocus(px, py);
+});
+
+/** 標準のカメラのピント合わせの四角：少し大きく出て縮み、しばらくして薄くなる */
+function showFocus(x, y) {
+  const old = $('focus');
+  if (old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'focus';
+  el.style.left = `${x - 38}px`;
+  el.style.top = `${y - 38}px`;
+  preview.appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('settled')));
+  setTimeout(() => el.classList.add('faded'), 1200);
+}
 
 let live = null;        // { corners: 映像に対する割合 0〜1, aspect: 映像の 幅÷高さ }
 let lastSeen = 0;
@@ -153,7 +186,7 @@ setInterval(async () => {
     const ctx = detectCanvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(video, 0, 0, w, h);
     const data = ctx.getImageData(0, 0, w, h).data;
-    const r = await call({ type: 'detect', width: w, height: h, data }, [data.buffer]);
+    const r = await call({ type: 'detect', width: w, height: h, data, hint: currentHint() }, [data.buffer]);
     if (r.corners) {
       // プレビューは内カメラだと鏡像なので、枠も左右を反転して重ねる
       let corners = r.corners.map((p) => ({ x: p.x / w, y: p.y / h }));
@@ -208,22 +241,23 @@ $('shutter').onclick = async () => {
   const canvas = document.createElement('canvas');
   canvas.width = vw; canvas.height = vh;
   canvas.getContext('2d').drawImage(video, 0, 0, vw, vh);   // 保存する写真は鏡像にしない（標準のカメラと同じ）
-  await processPhoto(canvas, front);
+  await processPhoto(canvas, front, currentHint());
 };
 
-async function processPhoto(canvas, isFront) {
+async function processPhoto(canvas, isFront, hint = null) {
   const start = performance.now();
   showThumbnail(canvas);   // サムネイルは焼き込む前の白紙の写真
   lastFile = null;
   // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す
   const latest = await syncLinkCard(1500);
   const log = [`${canvas.width}x${canvas.height} ${isFront ? '内カメラ' : '背面カメラ'} ${CARDS[card]}`
+    + (hint ? ` タップ ${hint.x.toFixed(2)},${hint.y.toFixed(2)}` : '')
     + (linkId || linkCode ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : '')];
   try {
     await faceReady;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const r = await call({ type: 'print', width: canvas.width, height: canvas.height, data, front: isFront }, [data.buffer]);
+    const r = await call({ type: 'print', width: canvas.width, height: canvas.height, data, front: isFront, hint }, [data.buffer]);
     log.push(`検出 ${(r.detectMs / 1000).toFixed(2)}秒 / 焼き込み ${(r.printMs / 1000).toFixed(2)}秒`);
     if (r.patch) {
       ctx.putImageData(new ImageData(r.patch.data, r.patch.width, r.patch.height), r.patch.x, r.patch.y);

@@ -11,15 +11,15 @@ self.onmessage = (e) => {
       self.postMessage({ type: 'face', id: m.id });
     } else if (m.type === 'detect') {
       // 撮る前の枠：すでに長辺1200px程度に縮めた映像の1コマ
-      const corners = findCard({ width: m.width, height: m.height, data: m.data }, 1);
+      const corners = findCard({ width: m.width, height: m.height, data: m.data }, 1, m.hint);
       self.postMessage({ type: 'detect', id: m.id, corners, width: m.width, height: m.height });
     } else if (m.type === 'print') {
       const photo = { width: m.width, height: m.height, data: m.data };
       const t0 = performance.now();
       const { image: small, scale } = downscale(photo, 1200);
-      const corners = findCard(small, scale);
+      const corners = findCard(small, scale, m.hint);   // hint：タップで示された位置（割合）
       const t1 = performance.now();
-      // 印刷されたカード（絵札以外）なら、先にインクを消してから焼き込む
+      // 印刷されたカードなら、先に印刷を消してから焼き込む（絵札は非推奨だが消せる）
       const erased = corners && face ? eraseInk(corners, photo) : false;
       const patch = corners && face ? composite(face, corners, photo, m.front) : null;
       const t2 = performance.now();
