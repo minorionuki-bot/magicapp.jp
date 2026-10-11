@@ -7,7 +7,7 @@ self.onmessage = (e) => {
   const m = e.data;
   try {
     if (m.type === 'face') {
-      face = makeCardFace({ width: CARD_W, height: CARD_H, data: m.data });
+      face = m.data ? makeCardFace({ width: CARD_W, height: CARD_H, data: m.data }) : null;   // null＝絵柄の素材なし
       self.postMessage({ type: 'face', id: m.id });
     } else if (m.type === 'detect') {
       // 撮る前の枠：すでに長辺1200px程度に縮めた映像の1コマ
@@ -23,7 +23,7 @@ self.onmessage = (e) => {
       const erased = corners && face ? eraseInk(corners, photo) : false;
       const patch = corners && face ? composite(face, corners, photo, m.front) : null;
       const t2 = performance.now();
-      const msg = { type: 'print', id: m.id, found: !!corners, erased, patch, detectMs: t1 - t0, printMs: t2 - t1 };
+      const msg = { type: 'print', id: m.id, found: !!corners, hasFace: !!face, erased, patch, detectMs: t1 - t0, printMs: t2 - t1 };
       self.postMessage(msg, patch ? [patch.data.buffer] : []);
     }
   } catch (err) {

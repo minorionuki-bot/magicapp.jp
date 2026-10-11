@@ -5,7 +5,11 @@
 import { CARD_W, CARD_H } from './printer.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-const CARDS = { AD: 'ダイヤのA', AC: 'クラブのA', KS: 'スペードのK', KH: 'ハートのK', KC: 'クラブのK' };
+// 54枚の記号と名前（記号は「数字＋マーク」かジョーカー。絵柄は cards/<記号>.png。まだ一部しかない）
+const SUITS = { S: 'スペード', H: 'ハート', D: 'ダイヤ', C: 'クラブ' };
+const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const CARDS = { JK1: 'ジョーカー1', JK2: 'ジョーカー2' };
+for (const [s, name] of Object.entries(SUITS)) for (const r of RANKS) CARDS[r + s] = `${name}の${r}`;
 const $ = (id) => document.getElementById(id);
 const video = $('video'), preview = $('preview'), frameEl = $('frame');
 
@@ -41,6 +45,9 @@ function storage(key, value) {
 }
 const params = new URLSearchParams(location.search);
 const linkId = params.get('id');
+// 短いリンク（magicapp.jp/12345）。magicapp.jp の 404.html がこのページを出すので、アドレスは5桁の番号のまま
+const shortMatch = location.pathname.match(/^\/(\d{5})\/?$/);
+const linkCode = shortMatch ? Number(shortMatch[1]) : null;
 let card = params.get('card');
 if (!CARDS[card]) card = storage('card');
 if (!CARDS[card]) card = 'KH';
@@ -48,14 +55,15 @@ let faceReady = loadFace(card);
 
 /** クラウドからこのリンクのカードを読む。読めなければ null（timeoutMs で諦める） */
 async function fetchLinkCard(timeoutMs) {
-  if (!linkId) return null;
+  if (!linkId && !linkCode) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/magicphoto_get`, {
+    const [fn, body] = linkId ? ['magicphoto_get', { p_id: linkId }] : ['magicphoto_get_by_code', { p_code: linkCode }];
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
       method: 'POST',
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p_id: linkId }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
       cache: 'no-store',
     });
@@ -81,7 +89,10 @@ async function syncLinkCard(timeoutMs) {
 syncLinkCard(5000);
 
 async function loadFace(name) {
-  const blob = await (await fetch(`cards/${name}.png`)).blob();
+  const res = await fetch(`cards/${name}.png`);
+  // 絵柄の素材がまだないカード：焼き込まずに元の写真をそのまま保存する（お客さんには普通の写真に見える）
+  if (!res.ok) { await call({ type: 'face', data: null }); return; }
+  const blob = await res.blob();
   const bitmap = await createImageBitmap(blob);
   const canvas = new OffscreenCanvas(CARD_W, CARD_H);
   const ctx = canvas.getContext('2d');
@@ -207,7 +218,7 @@ async function processPhoto(canvas, isFront) {
   // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す
   const latest = await syncLinkCard(1500);
   const log = [`${canvas.width}x${canvas.height} ${isFront ? '内カメラ' : '背面カメラ'} ${CARDS[card]}`
-    + (linkId ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : '')];
+    + (linkId || linkCode ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : '')];
   try {
     await faceReady;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -219,7 +230,8 @@ async function processPhoto(canvas, isFront) {
       log.push(r.erased ? '元の印刷を消して焼き込み成功' : '焼き込み成功');
     } else {
       // 見つからなかったときは元の写真をそのまま保存する（お客さんには普通の写真に見える）
-      log.push(r.found ? '焼き込みに失敗（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
+      log.push(!r.hasFace ? 'このカードの絵柄がまだない（元の写真を保存）'
+        : r.found ? '焼き込みに失敗（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
     }
     const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
     lastFile = new File([blob], `IMG_${Date.now() % 10000}.JPG`, { type: 'image/jpeg' });
