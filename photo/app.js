@@ -1,0 +1,299 @@
+// ブラウザ版の撮影画面。iPhone の標準カメラに似せた見た目で、撮る前にカードを認識したら黄色の枠を出し、
+// 撮ったら裏で焼き込む。保存は「左下のサムネイル → 共有 → 画像を保存」の2タップ
+// （ブラウザは処理が終わってから自動で共有画面を開けないため）。
+// サムネイルには焼き込む前の白紙の写真を出し、保存されるのは焼き込み済みの写真（その場でネタが割れない）。
+import { CARD_W, CARD_H } from './printer.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+
+const CARDS = { AD: 'ダイヤのA', AC: 'クラブのA', KS: 'スペードのK', KH: 'ハートのK', KC: 'クラブのK' };
+const $ = (id) => document.getElementById(id);
+const video = $('video'), preview = $('preview'), frameEl = $('frame');
+
+// MARK: 裏の処理（worker）とのやりとり
+
+const worker = new Worker('./worker.js', { type: 'module' });
+let nextId = 1;
+const pending = new Map();
+worker.onmessage = (e) => {
+  const p = pending.get(e.data.id);
+  if (!p) return;
+  pending.delete(e.data.id);
+  e.data.type === 'error' ? p.reject(new Error(e.data.message)) : p.resolve(e.data);
+};
+function call(msg, transfer = []) {
+  const id = nextId++;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    worker.postMessage({ ...msg, id }, transfer);
+  });
+}
+
+// MARK: 変化させるカード
+// 本番は URL の ?id=（本体アプリが発行したリンク）で、カードはクラウドから読む。演者がアプリでカードを選び直すと、
+// 同じリンクのまま変わる（撮る直前まで変えられるよう、シャッターを押した瞬間にも読み直す）。
+// ?card=KH は試験用
+
+function storage(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    localStorage.setItem(key, value);
+  } catch { return null; }
+}
+const params = new URLSearchParams(location.search);
+const linkId = params.get('id');
+let card = params.get('card');
+if (!CARDS[card]) card = storage('card');
+if (!CARDS[card]) card = 'KH';
+let faceReady = loadFace(card);
+
+/** クラウドからこのリンクのカードを読む。読めなければ null（timeoutMs で諦める） */
+async function fetchLinkCard(timeoutMs) {
+  if (!linkId) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/magicphoto_get`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_id: linkId }),
+      signal: ctrl.signal,
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const value = await res.json();
+    return typeof value === 'string' ? value : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** リンクのカードに合わせる（変わっていれば絵柄を読み直す） */
+async function syncLinkCard(timeoutMs) {
+  const latest = await fetchLinkCard(timeoutMs);
+  if (latest && CARDS[latest] && latest !== card) {
+    card = latest;
+    faceReady = loadFace(card);
+  }
+  return latest;
+}
+syncLinkCard(5000);
+
+async function loadFace(name) {
+  const blob = await (await fetch(`cards/${name}.png`)).blob();
+  const bitmap = await createImageBitmap(blob);
+  const canvas = new OffscreenCanvas(CARD_W, CARD_H);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, CARD_W, CARD_H);
+  const data = ctx.getImageData(0, 0, CARD_W, CARD_H).data;
+  await call({ type: 'face', data }, [data.buffer]);
+}
+
+// MARK: カメラ
+
+let front = storage('front') === '1';   // 本番は基本的に背面カメラ
+let stream = null;
+
+async function startCamera() {
+  stream?.getTracks().forEach((t) => t.stop());
+  preview.classList.toggle('mirror', front);
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      // できるだけ高い解像度で（ブラウザが出せる範囲に自動で丸められる）
+      video: { facingMode: front ? 'user' : 'environment', width: { ideal: 4032 }, height: { ideal: 3024 } },
+    });
+    video.srcObject = stream;
+    await video.play();
+    $('message').style.display = 'none';
+  } catch (err) {
+    $('message').textContent = 'カメラを使えません。\n' + (location.protocol !== 'https:' ? 'https で開いてください。' : String(err));
+    $('message').style.display = 'flex';
+  }
+}
+
+$('flip').onclick = () => {
+  front = !front;
+  storage('front', front ? '1' : '0');
+  live = null;
+  showFrame();
+  // 画面の大きさが変わったら（Safari のツールバーの出し入れなど）枠を置き直す
+window.addEventListener('resize', showFrame);
+
+startCamera();
+};
+
+// MARK: 撮る前の枠（映像を1秒に5回ほど取り出して、撮影時と同じ検出にかける）
+
+let live = null;        // { corners: 映像に対する割合 0〜1, aspect: 映像の 幅÷高さ }
+let lastSeen = 0;
+let detecting = false;
+const detectCanvas = new OffscreenCanvas(1, 1);
+
+setInterval(async () => {
+  if (detecting || video.readyState < 2 || !video.videoWidth || document.hidden) return;
+  detecting = true;
+  try {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const s = Math.min(1, 1200 / Math.max(vw, vh));
+    const w = Math.round(vw * s), h = Math.round(vh * s);
+    detectCanvas.width = w; detectCanvas.height = h;
+    const ctx = detectCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const r = await call({ type: 'detect', width: w, height: h, data }, [data.buffer]);
+    if (r.corners) {
+      // プレビューは内カメラだと鏡像なので、枠も左右を反転して重ねる
+      let corners = r.corners.map((p) => ({ x: p.x / w, y: p.y / h }));
+      if (front) corners = corners.map((p) => ({ x: 1 - p.x, y: p.y }));
+      // 検出結果に毎回飛びつかず、前の位置から少しずつ寄せる（枠をカクカクさせない）
+      if (live) corners = corners.map((p, i) => ({ x: live.corners[i].x * 0.6 + p.x * 0.4, y: live.corners[i].y * 0.6 + p.y * 0.4 }));
+      live = { corners, aspect: w / h };
+      lastSeen = performance.now();
+    } else if (performance.now() - lastSeen > 500) {
+      live = null;   // 一瞬見失っただけで枠がちらつかないよう、少しのあいだは前の枠を出しておく
+    }
+    showFrame();
+  } catch (err) {
+    console.warn(err);
+  } finally {
+    detecting = false;
+  }
+}, 200);
+
+/** 枠はカードと同じ縦横比（1:1.4）の角丸の四角で、カードの傾きと縦・横に合わせて回す */
+function showFrame() {
+  if (!live) { frameEl.classList.remove('on'); return; }
+  const W = preview.clientWidth, H = preview.clientHeight;
+  // 映像は枠いっぱいに拡大して、はみ出しを切っている（object-fit: cover）
+  const scale = Math.max(W / live.aspect, H);
+  const shownW = live.aspect * scale, shownH = scale;
+  const p = live.corners.map((c) => ({ x: (W - shownW) / 2 + c.x * shownW, y: (H - shownH) / 2 + c.y * shownH }));
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const center = { x: (p[0].x + p[1].x + p[2].x + p[3].x) / 4, y: (p[0].y + p[1].y + p[2].y + p[3].y) / 4 };
+  const shortSide = (d(p[0], p[1]) + d(p[3], p[2])) / 2, longSide = (d(p[0], p[3]) + d(p[1], p[2])) / 2;
+  const short = Math.sqrt(Math.max(shortSide * longSide, 1) / 1.4);   // 面積が同じで、縦横比がカードと同じ四角
+  const ax = (p[3].x - p[0].x) + (p[2].x - p[1].x), ay = (p[3].y - p[0].y) + (p[2].y - p[1].y);
+  let angle = Math.atan2(ay, ax) - Math.PI / 2;
+  while (angle > Math.PI / 2) angle -= Math.PI;
+  while (angle <= -Math.PI / 2) angle += Math.PI;
+  const fw = short * 1.12, fh = short * 1.4 * 1.12;
+  frameEl.style.width = `${fw}px`;
+  frameEl.style.height = `${fh}px`;
+  frameEl.style.transform = `translate(${center.x - fw / 2}px, ${center.y - fh / 2}px) rotate(${angle}rad)`;
+  frameEl.classList.add('on');
+}
+
+// MARK: 撮影 → 焼き込み
+
+let lastFile = null;
+
+$('shutter').onclick = async () => {
+  if (!video.videoWidth) return;
+  $('flash').classList.add('on');
+  requestAnimationFrame(() => requestAnimationFrame(() => $('flash').classList.remove('on')));
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = vw; canvas.height = vh;
+  canvas.getContext('2d').drawImage(video, 0, 0, vw, vh);   // 保存する写真は鏡像にしない（標準のカメラと同じ）
+  await processPhoto(canvas, front);
+};
+
+async function processPhoto(canvas, isFront) {
+  const start = performance.now();
+  showThumbnail(canvas);   // サムネイルは焼き込む前の白紙の写真
+  lastFile = null;
+  // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す
+  const latest = await syncLinkCard(1500);
+  const log = [`${canvas.width}x${canvas.height} ${isFront ? '内カメラ' : '背面カメラ'} ${CARDS[card]}`
+    + (linkId ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : '')];
+  try {
+    await faceReady;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const r = await call({ type: 'print', width: canvas.width, height: canvas.height, data, front: isFront }, [data.buffer]);
+    log.push(`検出 ${(r.detectMs / 1000).toFixed(2)}秒 / 焼き込み ${(r.printMs / 1000).toFixed(2)}秒`);
+    if (r.patch) {
+      ctx.putImageData(new ImageData(r.patch.data, r.patch.width, r.patch.height), r.patch.x, r.patch.y);
+      log.push(r.erased ? '元の印刷を消して焼き込み成功' : '焼き込み成功');
+    } else {
+      // 見つからなかったときは元の写真をそのまま保存する（お客さんには普通の写真に見える）
+      log.push(r.found ? '焼き込みに失敗（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
+    }
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
+    lastFile = new File([blob], `IMG_${Date.now() % 10000}.JPG`, { type: 'image/jpeg' });
+    log.push(`保存の準備ができました（${((performance.now() - start) / 1000).toFixed(1)}秒）`);
+  } catch (err) {
+    log.push('失敗: ' + err.message);
+  }
+  $('log').textContent = log.join('\n');
+  return lastFile;
+}
+
+function showThumbnail(source) {
+  const t = document.createElement('canvas');
+  const s = 160 / Math.max(source.width, source.height);
+  t.width = Math.round(source.width * s); t.height = Math.round(source.height * s);
+  t.getContext('2d').drawImage(source, 0, 0, t.width, t.height);
+  $('thumb').style.backgroundImage = `url(${t.toDataURL('image/jpeg', 0.8)})`;
+  $('thumb').classList.remove('empty');
+}
+
+// サムネイル → 共有画面（「画像を保存」でカメラロールへ）
+$('thumb').onclick = async () => {
+  if (!lastFile) return;
+  if (navigator.canShare?.({ files: [lastFile] })) {
+    try { await navigator.share({ files: [lastFile] }); } catch { /* 閉じただけ */ }
+  } else {
+    // 共有できないブラウザ（Macなど）は、画像を新しいタブで開く
+    window.open(URL.createObjectURL(lastFile), '_blank');
+  }
+};
+
+// MARK: 演者用メニュー（上の黒い帯を1秒長押し）
+
+let pressTimer = null;
+$('top').addEventListener('pointerdown', () => { pressTimer = setTimeout(openMenu, 1000); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => $('top').addEventListener(ev, () => clearTimeout(pressTimer)));
+$('closeMenu').onclick = () => $('menu').classList.remove('on');
+
+function openMenu() {
+  const list = $('cards');
+  list.innerHTML = '';
+  for (const [key, name] of Object.entries(CARDS)) {
+    const row = document.createElement('div');
+    row.className = 'row card' + (key === card ? ' selected' : '');
+    row.innerHTML = `<span>${name}</span><span class="check">✓</span>`;
+    row.onclick = () => {
+      card = key;
+      storage('card', key);
+      faceReady = loadFace(key);
+      $('menu').classList.remove('on');
+    };
+    list.appendChild(row);
+  }
+  $('menu').classList.add('on');
+}
+
+// 調整用：カメラロールの写真で試す（カメラのない Mac のブラウザでの確認にも使う）
+$('testFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width; canvas.height = bitmap.height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  $('log').textContent = '処理中…';
+  const out = await processPhoto(canvas, front);
+  if (out) {
+    $('testResult').src = URL.createObjectURL(out);
+    $('testResult').style.display = 'block';
+  }
+  e.target.value = '';
+};
+
+// 画面の大きさが変わったら（Safari のツールバーの出し入れなど）枠を置き直す
+window.addEventListener('resize', showFrame);
+
+startCamera();
