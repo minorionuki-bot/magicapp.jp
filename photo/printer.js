@@ -935,8 +935,9 @@ export function eraseInk(quad, photo) {
     dilate(core, cw, ch, 1);
     const both = core.slice();
     for (let i = 0; i < n; i++) if (weak[i]) both[i] = 1;
+    // 灰色に写るのは黒いマークだけ。赤いマークにつながる灰色は指の影のことがあった（理由は Swift 側、IMG_7018）
     for (const blob of regions(both, cw, ch, 1)) {
-      if (blob.some((i) => core[i])) for (const i of blob) core[i] = 1;
+      if (blob.some((i) => core[i] && lum[i] < 0.35 * paperEst[i])) for (const i of blob) core[i] = 1;
     }
     // マークの内側が反射で明るくなった「穴」も埋めて、マークごと消す
     fillEnclosedHoles(core, cw, ch);
@@ -957,14 +958,16 @@ export function eraseInk(quad, photo) {
     for (let i = 0; i < n; i++) if (skin[i]) outsideHand[i] = 0;
     core = new Uint8Array(n);
     for (const blob of regions(outsideHand, cw, ch, 1)) {
-      let touches = false, sr = 0, sg = 0, sb = 0;
+      let touches = false, sr = 0, sg = 0, sb = 0, sd = 0;
       for (const i of blob) {
         if (handEdge[i]) touches = true;
+        sd += lum[i] / Math.max(paperEst[i], 1e-4);
         const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
         sr += Rs[i] / s; sg += Gs[i] / s; sb += Bs[i] / s;
       }
       const redness = (sr - Math.max(sg, sb)) / blob.length;
-      if (!touches || redness > 0.55 || redness < 0.2) for (const i of blob) core[i] = 1;
+      // 黒いマークは紙の5%ほどの暗さ。指とカードの境目の影の筋は30%ほど（理由は Swift 側、IMG_7018）
+      if (!touches || redness > 0.55 || (redness < 0.2 && sd / blob.length < 0.2)) for (const i of blob) core[i] = 1;
     }
 
     // インクがほとんどない（白紙のカード）なら何もしない
@@ -1009,6 +1012,42 @@ export function eraseInk(quad, photo) {
     }
     if (!missing) break;
   }
+  // 数字札：穴の縁の色をなめらかにつなぐ（ラプラス方程式を SOR 法で。理由は Swift 側、IMG_7018・6978）
+  if (!isCourt) {
+    const boundary = new Uint8Array(n);   // 1 = 縁の値として使う紙、2 = 解く穴
+    for (let i = 0; i < n; i++) {
+      if (!inside[i] || skin[i]) continue;
+      boundary[i] = erase[i] || lum[i] < 0.6 * paperEst[i] ? 2 : 1;
+    }
+    const island = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (boundary[i] === 1) island[i] = 1;
+    for (const blob of regions(island, cw, ch, 1)) if (blob.length < insideCount / 100) for (const i of blob) boundary[i] = 2;
+    const holes = [];
+    for (let i = 0; i < n; i++) if (boundary[i] === 2) { holes.push(i); erase[i] = 1; }
+    const nbStart = new Int32Array(holes.length + 1), nbIndex = [];
+    holes.forEach((i, k) => {
+      const x = i % cw;
+      for (const j of [x > 0 ? i - 1 : -1, x < cw - 1 ? i + 1 : -1, i >= cw ? i - cw : -1, i + cw < n ? i + cw : -1]) {
+        if (j >= 0 && boundary[j]) nbIndex.push(j);
+      }
+      nbStart[k + 1] = nbIndex.length;
+    });
+    const nb = Int32Array.from(nbIndex);
+    for (const [fill, src] of [[fillR, Rs], [fillG, Gs], [fillB, Bs]]) {
+      for (let i = 0; i < n; i++) if (boundary[i] === 1) fill[i] = src[i];
+      for (let it = 0; it < 80; it++) {
+        for (let k = 0; k < holes.length; k++) {
+          const s0 = nbStart[k], s1 = nbStart[k + 1];
+          if (s1 <= s0) continue;
+          let sum = 0;
+          for (let t = s0; t < s1; t++) sum += fill[nb[t]];
+          const i = holes[k];
+          fill[i] += 1.9 * (sum / (s1 - s0) - fill[i]);
+        }
+      }
+    }
+    for (const i of holes) filled[i] = 1;
+  }
   // 絵札は消す範囲が広いので、縁の紙の色と明るさに、カード全体でなめらかな面（2次式）を当てはめて埋める
   if (isCourt) {
     const samples = [];
@@ -1034,12 +1073,18 @@ export function eraseInk(quad, photo) {
   }
 
   // 布目：きれいな紙の「明るさ ÷ 照明」の揺れを、少しずらした位置から写す
+  // 揺れは「すぐ近くの紙の平均」との比で取る（細かい凹凸だけ。理由は Swift 側）
   const resid = new Float32Array(n), cleanTex = new Uint8Array(n);
+  const texMask = new Float32Array(n), localLum = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     if (!inside[i] || band[i] || skin[i] || (isCourt && !paperLike[i])) continue;
-    const il = 0.2126 * fillR[i] + 0.7152 * fillG[i] + 0.0722 * fillB[i];
-    resid[i] = lum[i] / Math.max(il, 1e-4) - 1;
-    cleanTex[i] = 1;
+    cleanTex[i] = 1; texMask[i] = 1; localLum[i] = lum[i];
+  }
+  const texSigma = Math.max(2, cardW / 200);
+  gaussianBlur(localLum, cw, ch, texSigma);
+  gaussianBlur(texMask, cw, ch, texSigma);
+  for (let i = 0; i < n; i++) {
+    if (cleanTex[i]) resid[i] = lum[i] / Math.max(localLum[i] / Math.max(texMask[i], 1e-4), 1e-4) - 1;
   }
   const tex = new Float32Array(n), got = new Uint8Array(n);
   const step = Math.floor(cardW * 0.13);
@@ -1055,7 +1100,8 @@ export function eraseInk(quad, photo) {
         const sx = x - dx;
         if (sx < 0 || sx >= cw) continue;
         const j = sy * cw + sx;
-        if (cleanTex[j]) { tex[i] = Math.max(-0.15, Math.min(0.15, resid[j])); got[i] = 1; }
+        // 布目の揺れは数%。それより大きいのはマークのきわの明るい縁や影の境目なので、写す元にしない
+        if (cleanTex[j] && Math.abs(resid[j]) < 0.08) { tex[i] = resid[j]; got[i] = 1; }
       }
     }
   }
