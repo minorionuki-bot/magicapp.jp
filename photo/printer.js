@@ -796,7 +796,183 @@ function refine(q, lum, w, h, paper) {
  * 印刷されたカード（絵札以外）なら、指を残してインクだけを消して白紙にする（photo をその場で書き換える）。
  * インクが見つからなければ（白紙なら）何もせず false。Swift の CardEraser.swift を移したもの（理由はそちら）
  */
-export function eraseInk(quad, photo) {
+// MARK: - カードを当てる（Swift の CardMatcher と同じ）
+
+export const MATCH_W = CARD_W / 2, MATCH_H = CARD_H / 2;
+
+/** tools/make_card_index.py が作る索引（cards/index.bin）を読む */
+export function parseCardIndex(buffer) {
+  const b = new Uint8Array(buffer);
+  if (b.length < 10 || String.fromCharCode(...b.slice(0, 4)) !== 'MPCI') return null;
+  const u16 = (o) => b[o] | (b[o + 1] << 8);
+  const w = u16(4), h = u16(6), count = u16(8);
+  const cards = [];
+  let o = 10;
+  for (let k = 0; k < count; k++) {
+    if (o + 4 + w * h > b.length) return null;
+    const name = String.fromCharCode(...b.slice(o, o + 4).filter((c) => c));
+    const ink = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) ink[i] = b[o + 4 + i] / 255;
+    cards.push({ name, ink });
+    o += 4 + w * h;
+  }
+  return { w, h, cards };
+}
+
+function nccArrays(a, b) {
+  const n = a.length;
+  let ma = 0, mb = 0;
+  for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < n; i++) { const x = a[i] - ma, y = b[i] - mb; sab += x * y; saa += x * x; sbb += y * y; }
+  return sab / Math.max(Math.sqrt(saa * sbb), 1e-9);
+}
+
+/** 窓 [x0, y0, x1, y1) の中で、写真 obs と「dx, dy ずらした素材 t」の相関。step で間引く */
+function shiftedNCC(obs, t, w, h, dx, dy, win, step) {
+  let sa = 0, sb = 0, sab = 0, saa = 0, sbb = 0, n = 0;
+  for (let y = win[1]; y < win[3]; y += step) {
+    const ty = y - dy;
+    for (let x = win[0]; x < win[2]; x += step) {
+      const tx = x - dx;
+      const a = obs[y * w + x];
+      const b = tx >= 0 && ty >= 0 && tx < w && ty < h ? t[ty * w + tx] : 0;
+      sa += a; sb += b; sab += a * b; saa += a * a; sbb += b * b; n++;
+    }
+  }
+  if (!n) return -1;
+  const cov = sab - sa * sb / n, va = saa - sa * sa / n, vb = sbb - sb * sb / n;
+  return cov / Math.max(Math.sqrt(va * vb), 1e-9);
+}
+
+/** 写真のカードを正面向き（w×h）に直したインクの濃さ（0=紙 1=黒） */
+function rectifiedInk(quad, photo, w, h) {
+  const W = photo.width, d = photo.data;
+  const toPhoto = homography([{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }], quad);
+  if (!toPhoto) return null;
+  const lumAt = (x, y) => {
+    const k = 4 * (y * W + x);
+    return 0.2126 * FROM8[d[k]] + 0.7152 * FROM8[d[k + 1]] + 0.0722 * FROM8[d[k + 2]];
+  };
+  const lum = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const [u, v] = toPhoto(x + 0.5, y + 0.5);
+      const fx = u - 0.5, fy = v - 0.5;
+      const ix = Math.max(0, Math.min(W - 2, Math.floor(fx))), iy = Math.max(0, Math.min(photo.height - 2, Math.floor(fy)));
+      const ax = Math.max(0, Math.min(1, fx - ix)), ay = Math.max(0, Math.min(1, fy - iy));
+      lum[y * w + x] = (lumAt(ix, iy) * (1 - ax) + lumAt(ix + 1, iy) * ax) * (1 - ay)
+        + (lumAt(ix, iy + 1) * (1 - ax) + lumAt(ix + 1, iy + 1) * ax) * ay;
+    }
+  }
+  const paper = lum.slice();
+  maxFilter(paper, w, h, 20);
+  gaussianBlur(paper, w, h, 12);
+  const obs = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) obs[i] = Math.max(0, Math.min(1, 1 - lum[i] / Math.max(paper[i], 1e-4)));
+  return obs;
+}
+
+/** どのカードかを当てる。当てられなければ null（理由と基準は Swift 側） */
+export function identifyCard(quad, photo, index) {
+  if (!index) return null;
+  const obs = rectifiedInk(quad, photo, MATCH_W, MATCH_H);
+  if (!obs) return null;
+  const f = MATCH_W / index.w;
+  const small = new Float32Array(index.w * index.h);
+  for (let y = 0; y < index.h; y++) {
+    for (let x = 0; x < index.w; x++) {
+      let s = 0;
+      for (let dy = 0; dy < f; dy++) for (let dx = 0; dx < f; dx++) s += obs[(y * f + dy) * MATCH_W + x * f + dx];
+      small[y * index.w + x] = s / (f * f);
+    }
+  }
+  let best = null;
+  for (const card of index.cards) {
+    for (const rotated of [false, true]) {
+      const t = rotated ? card.ink.slice().reverse() : card.ink;
+      const score = nccArrays(small, t);
+      if (!best || score > best.score) best = { score, name: card.name, rotated };
+    }
+  }
+  debugLog('match', best && best.name, best && best.rotated ? '180' : '', 'score', best && best.score);
+  if (!best || best.score <= 0.45) return null;
+  return { ...best, obs };
+}
+
+/** 当てたカードの素材（makeCardFace の結果）を、写真のマークと数字にぴったり合わせた場所（MATCH_W×MATCH_H、1=インク） */
+export function alignMarks(found, face) {
+  const MW = MATCH_W, MH = MATCH_H, obs = found.obs;
+  let tmpl = new Float32Array(MW * MH);
+  for (let y = 0; y < MH; y++) {
+    for (let x = 0; x < MW; x++) {
+      let s = 0;
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          const i = (2 * y + dy) * CARD_W + 2 * x + dx;
+          s += 1 - (0.2126 * face.r[i] + 0.7152 * face.g[i] + 0.0722 * face.b[i]);
+        }
+      }
+      tmpl[y * MW + x] = s / 4;
+    }
+  }
+  if (found.rotated) tmpl = tmpl.reverse();
+  // カード全体のずれ（±16）
+  const whole = [0, 0, MW, MH];
+  let g = { score: -Infinity, dx: 0, dy: 0 };
+  for (let dy = -16; dy <= 16; dy += 2) {
+    for (let dx = -16; dx <= 16; dx += 2) {
+      const s = shiftedNCC(obs, tmpl, MW, MH, dx, dy, whole, 3);
+      if (s > g.score) g = { score: s, dx, dy };
+    }
+  }
+  const g0 = { ...g };
+  for (let dy = g0.dy - 1; dy <= g0.dy + 1; dy++) {
+    for (let dx = g0.dx - 1; dx <= g0.dx + 1; dx++) {
+      if (dx === g0.dx && dy === g0.dy) continue;
+      const s = shiftedNCC(obs, tmpl, MW, MH, dx, dy, whole, 3);
+      if (s > g.score) g = { score: s, dx, dy };
+    }
+  }
+  // マークと数字を1つずつ（±8）。指で隠れて合わないものは全体のずれのまま
+  const mask = new Uint8Array(MW * MH);
+  for (let i = 0; i < MW * MH; i++) if (tmpl[i] > 0.25) mask[i] = 1;
+  const expected = new Uint8Array(MW * MH);
+  const shifts = [];
+  for (const comp of regions(mask, MW, MH, 8)) {
+    let x0 = MW, y0 = MH, x1 = 0, y1 = 0;
+    for (const i of comp) {
+      const x = i % MW, y = (i / MW) | 0;
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+    const m = 12;
+    const win = [Math.max(0, x0 + g.dx - m), Math.max(0, y0 + g.dy - m), Math.min(MW, x1 + 1 + g.dx + m), Math.min(MH, y1 + 1 + g.dy + m)];
+    const part = new Float32Array(MW * MH);
+    for (const i of comp) part[i] = tmpl[i];
+    let c = { score: -Infinity, dx: g.dx, dy: g.dy };
+    for (let dy = g.dy - 8; dy <= g.dy + 8; dy++) {
+      for (let dx = g.dx - 8; dx <= g.dx + 8; dx++) {
+        const s = shiftedNCC(obs, part, MW, MH, dx, dy, win, 1);
+        if (s > c.score) c = { score: s, dx, dy };
+      }
+    }
+    if (c.score < 0.5) c = { score: c.score, dx: g.dx, dy: g.dy };
+    shifts.push(`${c.dx - g.dx},${c.dy - g.dy}`);
+    for (const i of comp) {
+      const x = (i % MW) + c.dx, y = ((i / MW) | 0) + c.dy;
+      if (x >= 0 && y >= 0 && x < MW && y < MH) expected[y * MW + x] = 1;
+    }
+  }
+  debugLog('align global', g.dx * 2, g.dy * 2, 'parts', shifts.join(' '));
+  return expected;
+}
+
+/**
+ * 印刷を消す。expectedHalf は、当てたカードのマークと数字のある場所（カードの座標の半分の大きさ、alignMarks の結果）。
+ * なければ色だけで見分ける
+ */
+export function eraseInk(quad, photo, expectedHalf = null) {
   const W = photo.width, H = photo.height;
   const cardW = len(sub(quad[1], quad[0]));
   const margin = cardW * 0.05;
@@ -846,6 +1022,23 @@ export function eraseInk(quad, photo) {
     if ((R[i] - Math.max(G[i], B[i])) / s0 > 0.55 || lum[i] < 0.25 * brightPaper) obvious++;
   }
   if (obvious * 2 <= insideCount / 400) return false;
+
+  // マークの場所（写真の画素ごと）と、そのまわり（カード幅の5%。理由は Swift 側）
+  let expected = null, nearMarks = null;
+  if (expectedHalf) {
+    expected = new Uint8Array(n);
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const i = y * cw + x;
+        if (!inside[i]) continue;
+        const [u, v] = toCard(x + 0.5, y + 0.5);
+        const mx = Math.min(MATCH_W - 1, Math.max(0, Math.floor(u / 2))), my = Math.min(MATCH_H - 1, Math.max(0, Math.floor(v / 2)));
+        if (expectedHalf[my * MATCH_W + mx]) expected[i] = 1;
+      }
+    }
+    nearMarks = expected.slice();
+    dilate(nearMarks, cw, ch, Math.max(6, Math.floor(cardW * 0.05)));
+  }
 
   // 紙の明るさの目安（局所的な最大値をならす）と紙の色
   const k = Math.max(7, Math.floor(cardW / 50));
@@ -970,6 +1163,13 @@ export function eraseInk(quad, photo) {
       if (!touches || redness > 0.55 || (redness < 0.2 && sd / blob.length < 0.2)) for (const i of blob) core[i] = 1;
     }
 
+    // カードを当てられたとき：インクは「素材のマークの場所」と「その近くで色がインクらしいところ」（理由は Swift 側）
+    if (expected) {
+      const exp = expected.slice();
+      dilate(exp, cw, ch, Math.max(2, Math.floor(cardW * 0.006)));
+      for (let i = 0; i < n; i++) core[i] = (core[i] && nearMarks[i]) || (exp[i] && !skin[i]) ? 1 : 0;
+    }
+
     // インクがほとんどない（白紙のカード）なら何もしない
     let inkCount = 0;
     for (let i = 0; i < n; i++) if (core[i]) inkCount++;
@@ -988,7 +1188,7 @@ export function eraseInk(quad, photo) {
       if ((Rs[i] - Math.max(Gs[i], Bs[i])) / s > 0.55) strongRed[i] = 1;
     }
     dilate(strongRed, cw, ch, Math.max(2, Math.floor(grow / 4)));
-    for (let i = 0; i < n; i++) if (strongRed[i] && inside[i] && !skinColor[i]) erase[i] = 1;
+    for (let i = 0; i < n; i++) if (strongRed[i] && inside[i] && !skinColor[i] && (!nearMarks || nearMarks[i])) erase[i] = 1;
     band = core.slice();
     dilate(band, cw, ch, 2 * grow);
 
@@ -1017,7 +1217,8 @@ export function eraseInk(quad, photo) {
     const boundary = new Uint8Array(n);   // 1 = 縁の値として使う紙、2 = 解く穴
     for (let i = 0; i < n; i++) {
       if (!inside[i] || skin[i]) continue;
-      boundary[i] = erase[i] || lum[i] < 0.6 * paperEst[i] ? 2 : 1;
+      // 位置が分かっているときは、暗い画素を穴に含めるのもマークの近くだけ
+      boundary[i] = erase[i] || (lum[i] < 0.6 * paperEst[i] && (!nearMarks || nearMarks[i])) ? 2 : 1;
     }
     const island = new Uint8Array(n);
     for (let i = 0; i < n; i++) if (boundary[i] === 1) island[i] = 1;
