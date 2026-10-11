@@ -766,7 +766,8 @@ export function eraseInk(quad, photo) {
     const isInk = r - Math.max(g, b) > 0.45 || lum[i] < 0.35 * paperEst[i];
     if (isInk && inside[i]) core[i] = 1;
     const dr = r - pc[0], dg = g - pc[1], db = b - pc[2];
-    if (!isInk && Math.sqrt(dr * dr + dg * dg + db * db) > 0.06 && g - b > 0.03) skinColor[i] = 1;
+    // 肌はカードの内側だけで見る（背景が肌に近い色だと、カード全体が「手の中の穴」として埋まった。理由は Swift 側）
+    if (!isInk && inside[i] && Math.sqrt(dr * dr + dg * dg + db * db) > 0.06 && g - b > 0.03) skinColor[i] = 1;
   }
   erode(core, cw, ch, 1);
   dilate(core, cw, ch, 1);
