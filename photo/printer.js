@@ -759,18 +759,30 @@ export function eraseInk(quad, photo) {
 
   // インク：鮮やかな赤（指は赤さ0.32〜0.40、インクは0.7〜0.9）か黒。肌は紙の色から外れて黄みがある
   let core = new Uint8Array(n);
+  const weak = new Uint8Array(n);
   const skinColor = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     const s = Rs[i] + Gs[i] + Bs[i] + 1e-6;
     const r = Rs[i] / s, g = Gs[i] / s, b = Bs[i] / s;
-    const isInk = r - Math.max(g, b) > 0.45 || lum[i] < 0.35 * paperEst[i];
+    const redness = r - Math.max(g, b);
+    const isInk = redness > 0.45 || lum[i] < 0.35 * paperEst[i];
     if (isInk && inside[i]) core[i] = 1;
+    // 反射で灰色に写った黒いマーク：はっきりしたインクにつながっているときだけ加える（理由は Swift 側）
+    if (!isInk && inside[i] && lum[i] < 0.6 * paperEst[i] && redness < 0.03) weak[i] = 1;
     const dr = r - pc[0], dg = g - pc[1], db = b - pc[2];
     // 肌はカードの内側だけで見る（背景が肌に近い色だと、カード全体が「手の中の穴」として埋まった。理由は Swift 側）
     if (!isInk && inside[i] && Math.sqrt(dr * dr + dg * dg + db * db) > 0.06 && g - b > 0.03) skinColor[i] = 1;
   }
   erode(core, cw, ch, 1);
   dilate(core, cw, ch, 1);
+  const both = core.slice();
+  for (let i = 0; i < n; i++) if (weak[i]) both[i] = 1;
+  for (const blob of regions(both, cw, ch, 1)) {
+    if (blob.some((i) => core[i])) for (const i of blob) core[i] = 1;
+  }
+  // マークの内側が反射で明るくなった「穴」も埋めて、マークごと消す
+  fillEnclosedHoles(core, cw, ch);
+  for (let i = 0; i < n; i++) if (!inside[i]) core[i] = 0;
 
   // 肌は大きな塊だけ。すき間と穴を埋めて「手の形」にし、その中は塗らない
   const skin = keepLargeRegions(skinColor, cw, ch, Math.floor(insideCount / 200));
