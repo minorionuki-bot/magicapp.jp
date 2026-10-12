@@ -12,7 +12,7 @@ function cardIndex() {
 async function template(name) {
   if (!templates.has(name)) {
     templates.set(name, (async () => {
-      const res = await fetch(`cards/${name}.png`);
+      const res = await fetch(`cards/${name}.webp`);
       if (!res.ok) return null;
       const bitmap = await createImageBitmap(await res.blob());
       const canvas = new OffscreenCanvas(CARD_W, CARD_H);
