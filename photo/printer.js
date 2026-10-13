@@ -1105,6 +1105,13 @@ export function eraseInk(quad, photo, expectedHalf = null) {
     fillEnclosedHoles(erase, cw, ch);
     dilate(erase, cw, ch, Math.max(3, Math.floor(cardW * 0.008)));
     for (let i = 0; i < n; i++) if (skin[i] || !inside[i]) erase[i] = 0;
+    // カードを当てられたときは、素材の「絵の枠と隅の数字」のまわり（3%）の外は消さない（理由は Swift 側）
+    if (expected) {
+      const region = expected.slice();
+      fillEnclosedHoles(region, cw, ch);
+      dilate(region, cw, ch, Math.max(4, Math.floor(cardW * 0.03)));
+      for (let i = 0; i < n; i++) if (!region[i]) erase[i] = 0;
+    }
     band = erase.slice();
     dilate(band, cw, ch, Math.max(4, Math.floor(cardW * 0.01)));
   } else {
@@ -1212,7 +1219,24 @@ export function eraseInk(quad, photo, expectedHalf = null) {
     }
     if (!missing) break;
   }
-  // 数字札：穴の縁の色をなめらかにつなぐ（ラプラス方程式を SOR 法で。理由は Swift 側、IMG_7018・6978）
+  // 絵札は消す範囲が広いので、縁の紙の色と明るさに、カード全体でなめらかな面（2次式）を当てはめて埋める
+  if (isCourt) {
+    const samples = [];
+    for (let i = 0; i < n; i += 5) if (nearClean[i]) samples.push([(i % cw) / cw, ((i / cw) | 0) / ch, R[i], G[i], B[i]]);
+    const cr = samples.length > 50 && fitQuadratic(samples, 2);
+    const cg = cr && fitQuadratic(samples, 3);
+    const cb = cg && fitQuadratic(samples, 4);
+    if (cb) {
+      const at = (c, x, y) => Math.max(0, c[0] + c[1] * x + c[2] * y + c[3] * x * x + c[4] * x * y + c[5] * y * y);
+      for (let i = 0; i < n; i++) {
+        if (!erase[i]) continue;
+        const x = (i % cw) / cw, y = ((i / cw) | 0) / ch;
+        fillR[i] = at(cr, x, y); fillG[i] = at(cg, x, y); fillB[i] = at(cb, x, y);
+        filled[i] = 1;
+      }
+    }
+  }
+  // 数字札：穴の縁の色をなめらかにつなぐ（ラプラス方程式を SOR 法で。絵札には使わない。理由は Swift 側）
   if (!isCourt) {
     const boundary = new Uint8Array(n);   // 1 = 縁の値として使う紙、2 = 解く穴
     for (let i = 0; i < n; i++) {
@@ -1248,23 +1272,6 @@ export function eraseInk(quad, photo, expectedHalf = null) {
       }
     }
     for (const i of holes) filled[i] = 1;
-  }
-  // 絵札は消す範囲が広いので、縁の紙の色と明るさに、カード全体でなめらかな面（2次式）を当てはめて埋める
-  if (isCourt) {
-    const samples = [];
-    for (let i = 0; i < n; i += 5) if (nearClean[i]) samples.push([(i % cw) / cw, ((i / cw) | 0) / ch, R[i], G[i], B[i]]);
-    const cr = samples.length > 50 && fitQuadratic(samples, 2);
-    const cg = cr && fitQuadratic(samples, 3);
-    const cb = cg && fitQuadratic(samples, 4);
-    if (cb) {
-      const at = (c, x, y) => Math.max(0, c[0] + c[1] * x + c[2] * y + c[3] * x * x + c[4] * x * y + c[5] * y * y);
-      for (let i = 0; i < n; i++) {
-        if (!erase[i]) continue;
-        const x = (i % cw) / cw, y = ((i / cw) | 0) / ch;
-        fillR[i] = at(cr, x, y); fillG[i] = at(cg, x, y); fillB[i] = at(cb, x, y);
-        filled[i] = 1;
-      }
-    }
   }
   // それでも近くに紙が見つからないところは、紙の色と明るさの目安で埋める
   for (let i = 0; i < n; i++) {
