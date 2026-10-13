@@ -15,7 +15,10 @@ const video = $('video'), preview = $('preview'), frameEl = $('frame');
 
 // MARK: 裏の処理（worker）とのやりとり
 
-const worker = new Worker('./worker.js', { type: 'module' });
+// 置き場所は app.js 自身の場所から数える。短いリンク（magicapp.jp/12345）のページは <base href="/photo/"> に頼っているが、
+// Safari はそれを無視することがあり、アドレス（/12345）から数えて読み込みに失敗した（2026-10-13）
+const here = (path) => new URL(path, import.meta.url).href;
+const worker = new Worker(here('./worker.js'), { type: 'module' });
 let nextId = 1;
 const pending = new Map();
 worker.onmessage = (e) => {
@@ -89,7 +92,7 @@ async function syncLinkCard(timeoutMs) {
 syncLinkCard(5000);
 
 async function loadFace(name) {
-  const res = await fetch(`cards/${name}.webp`);
+  const res = await fetch(here(`cards/${name}.webp`));
   // 絵柄の素材がまだないカード：焼き込まずに元の写真をそのまま保存する（お客さんには普通の写真に見える）
   if (!res.ok) { await call({ type: 'face', data: null }); return; }
   const blob = await res.blob();

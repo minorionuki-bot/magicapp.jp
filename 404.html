@@ -112,7 +112,12 @@
 <script type="module">
   // 5桁の番号のときだけ撮影画面を動かす。それ以外は普通の「ページが見つかりません」
   if (/^\/\d{5}\/?$/.test(location.pathname)) {
-    import('./app.js');
+    // Safari は <base> を無視して /app.js を読みにいき、何も動かなかった（2026-10-13）ので、置き場所をそのまま書く
+    import('/photo/app.js').catch((e) => {
+      const m = document.getElementById('message');
+      m.textContent = '読み込めませんでした。ページを読み込み直してください。\n' + e;
+      m.style.display = 'flex';
+    });
   } else {
     document.title = 'ページが見つかりません';
     document.body.innerHTML = '<div style="display:flex;height:100vh;align-items:center;justify-content:center;color:#888;font:15px -apple-system,sans-serif">ページが見つかりません</div>';
