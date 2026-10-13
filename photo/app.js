@@ -265,6 +265,8 @@ async function processPhoto(canvas, isFront, hint = null) {
   const start = performance.now();
   showThumbnail(canvas);   // サムネイルは焼き込む前の白紙の写真
   lastFile = null;
+  shareWanted = 0;
+  $('thumb').classList.add('busy');
   // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す
   const latest = await syncLinkCard(1500);
   const log = [`${canvas.width}x${canvas.height} ${isFront ? '内カメラ' : '背面カメラ'} ${CARDS[card]}`
@@ -291,6 +293,8 @@ async function processPhoto(canvas, isFront, hint = null) {
     log.push('失敗: ' + err.message);
   }
   $('log').textContent = log.join('\n');
+  $('thumb').classList.remove('busy');
+  readyToShare();
   return lastFile;
 }
 
@@ -303,15 +307,53 @@ function showThumbnail(source) {
   $('thumb').classList.remove('empty');
 }
 
-// サムネイル → 共有画面（「画像を保存」でカメラロールへ）
-$('thumb').onclick = async () => {
-  if (!lastFile) return;
+// サムネイル → 共有画面（「画像を保存」でカメラロールへ）。
+// 以前は焼き込みが終わる前（撮ってから数秒）に押しても何も起きず、何度も押してやっと開く状態だった（2026-10-13）。
+// 処理中に押されたら覚えておき、終わったら自動で開く。ただし Safari はタップから約5秒を過ぎると自動では開かせないので、
+// それより遅れたときはサムネイルを弾ませて「押せる」と知らせる
+let shareWanted = 0;   // 処理中にサムネイルが押された時刻（0＝押されていない）
+let sharing = false;
+
+async function share() {
+  if (!lastFile || sharing) return true;
   if (navigator.canShare?.({ files: [lastFile] })) {
-    try { await navigator.share({ files: [lastFile] }); } catch { /* 閉じただけ */ }
+    sharing = true;
+    try {
+      await navigator.share({ files: [lastFile] });
+    } catch (err) {
+      sharing = false;
+      // AbortError は共有画面を閉じただけ。それ以外（自動で開くのを Safari が許さなかった など）は失敗
+      return err?.name === 'AbortError';
+    }
+    sharing = false;
   } else {
     // 共有できないブラウザ（Macなど）は、画像を新しいタブで開く
     window.open(URL.createObjectURL(lastFile), '_blank');
   }
+  return true;
+}
+
+function readyToShare() {
+  if (!lastFile) return;
+  if (shareWanted && performance.now() - shareWanted < 4500) {
+    shareWanted = 0;
+    share().then((ok) => { if (!ok) bounce(); });
+    return;
+  }
+  shareWanted = 0;
+  bounce();
+}
+
+function bounce() {
+  const t = $('thumb');
+  t.classList.remove('ready');
+  void t.offsetWidth;   // 同じアニメーションをもう一度動かすため
+  t.classList.add('ready');
+}
+
+$('thumb').onclick = () => {
+  if (lastFile) share();
+  else if ($('thumb').classList.contains('busy')) shareWanted = performance.now();
 };
 
 // MARK: 演者用メニュー（上の黒い帯を1秒長押し）

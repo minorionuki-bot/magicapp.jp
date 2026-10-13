@@ -43,6 +43,14 @@
   #controls { display: flex; align-items: center; justify-content: space-between; padding: 0 32px; }
   #thumb { width: 48px; height: 48px; border-radius: 8px; background: #222 center / cover no-repeat; border: 0; padding: 0; }
   #thumb.empty { visibility: hidden; }
+  /* 焼き込み中：サムネイルのまわりの細い輪をゆっくり明滅させる。押せば終わったときに自動で共有画面を開く */
+  #thumb { position: relative; }
+  #thumb.busy::after { content: ''; position: absolute; inset: -4px; border-radius: 11px;
+    border: 2px solid #fff; animation: breathe .9s ease-in-out infinite alternate; }
+  @keyframes breathe { from { opacity: .15; } to { opacity: .8; } }
+  /* 押せるようになった合図：軽く弾む */
+  #thumb.ready { animation: pop .35s ease-out; }
+  @keyframes pop { 50% { transform: scale(1.15); } }
   #shutter { width: 78px; height: 78px; border-radius: 50%; border: 4px solid #fff; background: transparent; padding: 0;
     display: flex; align-items: center; justify-content: center; }
   #shutter::after { content: ""; width: 64px; height: 64px; border-radius: 50%; background: #fff; transition: transform .1s; }
