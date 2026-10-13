@@ -136,6 +136,40 @@ function maxFilter(a, w, h, r) {
   }
 }
 
+// MARK: - 縮小して計算する（なめらかに変わる量だけに使う。iPhone の Safari で保存までに4秒以上かかったので速くする）
+
+/** f×f の区画ごとに、最大値（max）か平均にまとめる */
+function shrink(a, w, h, f, max) {
+  const dw = Math.ceil(w / f), dh = Math.ceil(h / f), d = new Float32Array(dw * dh), c = new Float32Array(dw * dh);
+  if (max) d.fill(-Infinity);
+  for (let y = 0; y < h; y++) {
+    const row = ((y / f) | 0) * dw;
+    for (let x = 0; x < w; x++) {
+      const j = row + ((x / f) | 0), v = a[y * w + x];
+      if (max) { if (v > d[j]) d[j] = v; } else { d[j] += v; c[j]++; }
+    }
+  }
+  if (!max) for (let j = 0; j < dw * dh; j++) d[j] /= Math.max(1, c[j]);
+  return { d, dw, dh };
+}
+
+/** shrink したものを元の大きさに戻す（となりの区画となめらかにつなぐ） */
+function expand(s, f, w, h, only = null) {
+  const { d, dw, dh } = s, out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const fy = Math.min(dh - 1, Math.max(0, (y + 0.5) / f - 0.5));
+    const y0 = Math.min(dh - 2, Math.floor(fy)), ay = Math.min(1, fy - Math.max(0, y0));
+    const r0 = Math.max(0, y0) * dw, r1 = Math.min(dh - 1, Math.max(0, y0) + 1) * dw;
+    for (let x = 0; x < w; x++) {
+      if (only && !only[y * w + x]) continue;   // 必要な画素だけ（only があるとき）
+      const fx = Math.min(dw - 1, Math.max(0, (x + 0.5) / f - 0.5));
+      const x0 = Math.min(dw - 2, Math.floor(fx)), xa = Math.max(0, x0), xb = Math.min(dw - 1, xa + 1), ax = Math.min(1, fx - xa);
+      out[y * w + x] = (d[r0 + xa] * (1 - ax) + d[r0 + xb] * ax) * (1 - ay) + (d[r1 + xa] * (1 - ax) + d[r1 + xb] * ax) * ay;
+    }
+  }
+  return out;
+}
+
 /** つながった領域（8近傍）のうち、面積が minArea 以上のものの画素の番号 */
 function regions(a, w, h, minArea) {
   const seen = new Uint8Array(a.length);
@@ -866,9 +900,10 @@ function rectifiedInk(quad, photo, w, h) {
         + (lumAt(ix, iy + 1) * (1 - ax) + lumAt(ix + 1, iy + 1) * ax) * ay;
     }
   }
-  const paper = lum.slice();
-  maxFilter(paper, w, h, 20);
-  gaussianBlur(paper, w, h, 12);
+  const pq = shrink(lum, w, h, 4, true);   // 紙の明るさはなめらかなので 1/4 の大きさで求める
+  maxFilter(pq.d, pq.dw, pq.dh, 5);
+  gaussianBlur(pq.d, pq.dw, pq.dh, 3);
+  const paper = expand(pq, 4, w, h);
   const obs = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) obs[i] = Math.max(0, Math.min(1, 1 - lum[i] / Math.max(paper[i], 1e-4)));
   return obs;
@@ -1041,13 +1076,16 @@ export function eraseInk(quad, photo, expectedHalf = null) {
   }
 
   // 紙の明るさの目安（局所的な最大値をならす）と紙の色
+  // （なめらかな量なので 1/4 の大きさで求める）
   const k = Math.max(7, Math.floor(cardW / 50));
-  const paperEst = new Float32Array(n);
-  for (let i = 0; i < n; i++) if (inside[i]) paperEst[i] = lum[i];
-  maxFilter(paperEst, cw, ch, k);
-  gaussianBlur(paperEst, cw, ch, k);
+  const peFull = new Float32Array(n);
+  for (let i = 0; i < n; i++) if (inside[i]) peFull[i] = lum[i];
+  const pe = shrink(peFull, cw, ch, 4, true);
+  maxFilter(pe.d, pe.dw, pe.dh, Math.max(2, Math.round(k / 4)));
+  gaussianBlur(pe.d, pe.dw, pe.dh, k / 4);
+  const paperEst = expand(pe, 4, cw, ch);
   const insideLum = [];
-  for (let i = 0; i < n; i += 3) if (inside[i]) insideLum.push(lum[i]);
+  for (let i = 0; i < n; i += 11) if (inside[i]) insideLum.push(lum[i]);   // 間引いて並べる（全部並べると遅い）
   insideLum.sort((a, b) => a - b);
   const lumCut = insideLum[Math.floor(insideLum.length * 2 / 5)];
   const pr = [], pg = [], pb = [];
@@ -1067,20 +1105,29 @@ export function eraseInk(quad, photo, expectedHalf = null) {
     const dr = Rs[i] / s - pc[0], dg = Gs[i] / s - pc[1], db = Bs[i] / s - pc[2];
     if (lum[i] > 0.55 * paperEst[i] && Math.sqrt(dr * dr + dg * dg + db * db) < 0.07) paperLike[i] = 1;
   }
-  const hand = handReachingIn(Rs, Gs, Bs, inside, paperLike, pc, cw, ch, cardW);
-  let center = 0, centerArt = 0;
-  for (let y = 0; y < ch; y++) {
-    for (let x = 0; x < cw; x++) {
-      const i = y * cw + x;
-      if (!inside[i] || hand[i]) continue;
-      const [u, v] = toCard(x + 0.5, y + 0.5);
-      if (u <= 0.3 * CARD_W || u >= 0.7 * CARD_W || v <= 0.3 * CARD_H || v >= 0.7 * CARD_H) continue;
-      center++;
-      if (!paperLike[i]) centerArt++;
+  // 手の形を求めるのは重いので、まず手を除かずに数える。手を除くと「紙でないもの」の割合は下がるだけなので、
+  // この時点で6割以下なら数字札と決まり、手の形は要らない
+  const centerArtRatio = (hand) => {
+    let center = 0, centerArt = 0;
+    for (let y = 0; y < ch; y += 2) {
+      for (let x = 0; x < cw; x += 2) {
+        const i = y * cw + x;
+        if (!inside[i] || (hand && hand[i])) continue;
+        const [u, v] = toCard(x + 0.5, y + 0.5);
+        if (u <= 0.3 * CARD_W || u >= 0.7 * CARD_W || v <= 0.3 * CARD_H || v >= 0.7 * CARD_H) continue;
+        center++;
+        if (!paperLike[i]) centerArt++;
+      }
     }
+    debugLog('court?', 'center art', centerArt, 'of', center);
+    return center > 125 ? centerArt / center : 0;
+  };
+  let hand = null, isCourt = false;
+  if (centerArtRatio(null) > 0.6) {
+    hand = handReachingIn(Rs, Gs, Bs, inside, paperLike, pc, cw, ch, cardW);
+    isCourt = centerArtRatio(hand) > 0.6;
   }
-  const isCourt = center > 500 && centerArt > 0.6 * center;
-  debugLog('court?', isCourt, 'center art', centerArt, 'of', center);
+  debugLog('court?', isCourt);
 
   let erase, skin, band;
   if (isCourt) {
@@ -1205,20 +1252,33 @@ export function eraseInk(quad, photo, expectedHalf = null) {
   const nearClean = new Float32Array(n);
   // 絵札では、消さなかったところにも絵のふちが残っているので、紙の色の画素だけから推測する
   for (let i = 0; i < n; i++) if (inside[i] && !erase[i] && !skin[i] && (!isCourt || paperLike[i])) nearClean[i] = 1;
-  const fillR = new Float32Array(n), fillG = new Float32Array(n), fillB = new Float32Array(n);
-  const filled = new Uint8Array(n);
+  // （なめらかな量なので 1/4 の大きさで求める。数字札はこのあと穴の縁でぴったり合わせ直す）
+  const F = 4;
+  const wq = shrink(nearClean, cw, ch, F, false);
+  const tmp = new Float32Array(n);
+  const mq = [R, G, B].map((c) => { for (let i = 0; i < n; i++) tmp[i] = c[i] * nearClean[i]; return shrink(tmp, cw, ch, F, false); });
+  const eq = shrink(Float32Array.from(erase), cw, ch, F, true);
+  const qn = wq.dw * wq.dh;
+  const lowFill = [new Float32Array(qn), new Float32Array(qn), new Float32Array(qn)], lowFilled = new Float32Array(qn);
   for (const sigma of [cardW / 40, cardW / 15, cardW / 6, cardW / 2]) {
-    const wsum = nearClean.slice(), nr = new Float32Array(n), ng = new Float32Array(n), nb = new Float32Array(n);
-    for (let i = 0; i < n; i++) { nr[i] = R[i] * nearClean[i]; ng[i] = G[i] * nearClean[i]; nb[i] = B[i] * nearClean[i]; }
-    gaussianBlur(wsum, cw, ch, sigma); gaussianBlur(nr, cw, ch, sigma); gaussianBlur(ng, cw, ch, sigma); gaussianBlur(nb, cw, ch, sigma);
+    const ws = wq.d.slice();
+    gaussianBlur(ws, wq.dw, wq.dh, sigma / F);
+    const ms = mq.map((q) => { const a = q.d.slice(); gaussianBlur(a, wq.dw, wq.dh, sigma / F); return a; });
     let missing = false;
-    for (let i = 0; i < n; i++) {
-      if (filled[i]) continue;
-      if (wsum[i] > 0.15) { fillR[i] = nr[i] / wsum[i]; fillG[i] = ng[i] / wsum[i]; fillB[i] = nb[i] / wsum[i]; filled[i] = 1; }
-      else if (erase[i]) missing = true;
+    for (let j = 0; j < qn; j++) {
+      if (lowFilled[j]) continue;
+      if (ws[j] > 0.15) { for (let c = 0; c < 3; c++) lowFill[c][j] = ms[c][j] / ws[j]; lowFilled[j] = 1; }
+      else if (eq.d[j] > 0) missing = true;
     }
     if (!missing) break;
   }
+  // 使うのは消す画素と、そのまわり（穴の縁を合わせ直すときの出発点）だけ
+  const need = erase.slice();
+  dilate(need, cw, ch, 2);
+  const [fillR, fillG, fillB] = lowFill.map((d) => expand({ d, dw: wq.dw, dh: wq.dh }, F, cw, ch, need));
+  const filledF = expand({ d: lowFilled, dw: wq.dw, dh: wq.dh }, F, cw, ch, need);
+  const filled = new Uint8Array(n);
+  for (let i = 0; i < n; i++) filled[i] = filledF[i] > 0.99 ? 1 : 0;
   // 絵札は消す範囲が広いので、縁の紙の色と明るさに、カード全体でなめらかな面（2次式）を当てはめて埋める
   if (isCourt) {
     const samples = [];
@@ -1247,8 +1307,17 @@ export function eraseInk(quad, photo, expectedHalf = null) {
     const island = new Uint8Array(n);
     for (let i = 0; i < n; i++) if (boundary[i] === 1) island[i] = 1;
     for (const blob of regions(island, cw, ch, 1)) if (blob.length < insideCount / 100) for (const i of blob) boundary[i] = 2;
+    // 解くのは穴の縁から十数ピクセルの帯だけ。奥はなめらかな推定のままで、帯の内側の端がそれにつながる
+    // （大きなマークの穴を全部解くと遅かった。縁を合わせる効果は帯の中で足りる）
+    const nearEdge = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (boundary[i] === 1) nearEdge[i] = 1;
+    dilate(nearEdge, cw, ch, 14);
     const holes = [];
-    for (let i = 0; i < n; i++) if (boundary[i] === 2) { holes.push(i); erase[i] = 1; }
+    for (let i = 0; i < n; i++) {
+      if (boundary[i] !== 2) continue;
+      erase[i] = 1;
+      if (nearEdge[i]) holes.push(i); else boundary[i] = 3;   // 3 = 奥（推定の値のまま、帯の縁として使う）
+    }
     const nbStart = new Int32Array(holes.length + 1), nbIndex = [];
     holes.forEach((i, k) => {
       const x = i % cw;
@@ -1258,20 +1327,30 @@ export function eraseInk(quad, photo, expectedHalf = null) {
       nbStart[k + 1] = nbIndex.length;
     });
     const nb = Int32Array.from(nbIndex);
-    for (const [fill, src] of [[fillR, Rs], [fillG, Gs], [fillB, Bs]]) {
-      for (let i = 0; i < n; i++) if (boundary[i] === 1) fill[i] = src[i];
-      for (let it = 0; it < 80; it++) {
-        for (let k = 0; k < holes.length; k++) {
-          const s0 = nbStart[k], s1 = nbStart[k + 1];
-          if (s1 <= s0) continue;
-          let sum = 0;
-          for (let t = s0; t < s1; t++) sum += fill[nb[t]];
-          const i = holes[k];
-          fill[i] += 1.9 * (sum / (s1 - s0) - fill[i]);
-        }
+    for (let i = 0; i < n; i++) if (boundary[i] === 1) { fillR[i] = Rs[i]; fillG[i] = Gs[i]; fillB[i] = Bs[i]; }
+    // 消す範囲の外から穴に加えた画素（マークの近くの暗い画素・取り残された島）は、まだ出発点が入っていないので入れる
+    const mark = new Uint8Array(n);
+    let marked = 0;
+    for (let i = 0; i < n; i++) if (boundary[i] >= 2 && !need[i]) { mark[i] = 1; marked++; }
+    if (marked) {
+      lowFill.forEach((d, c) => {
+        const full = expand({ d, dw: wq.dw, dh: wq.dh }, F, cw, ch, mark), dst = [fillR, fillG, fillB][c];
+        for (let i = 0; i < n; i++) if (mark[i]) dst[i] = full[i];
+      });
+    }
+    for (let it = 0; it < 30; it++) {
+      for (let k = 0; k < holes.length; k++) {
+        const s0 = nbStart[k], s1 = nbStart[k + 1];
+        if (s1 <= s0) continue;
+        let sr = 0, sg = 0, sb = 0;
+        for (let t = s0; t < s1; t++) { const j = nb[t]; sr += fillR[j]; sg += fillG[j]; sb += fillB[j]; }
+        const i = holes[k], inv = 1 / (s1 - s0);
+        fillR[i] += 1.9 * (sr * inv - fillR[i]);
+        fillG[i] += 1.9 * (sg * inv - fillG[i]);
+        fillB[i] += 1.9 * (sb * inv - fillB[i]);
       }
     }
-    for (const i of holes) filled[i] = 1;
+    for (let i = 0; i < n; i++) if (boundary[i] >= 2) filled[i] = 1;
   }
   // それでも近くに紙が見つからないところは、紙の色と明るさの目安で埋める
   for (let i = 0; i < n; i++) {
@@ -1298,18 +1377,17 @@ export function eraseInk(quad, photo, expectedHalf = null) {
   const step = Math.floor(cardW * 0.13);
   const shifts = [];
   for (let k2 = 1; k2 <= 5; k2++) { const st = k2 * step; shifts.push([st, 0], [-st, 0], [0, st], [0, -st], [st, st], [-st, -st]); }
-  for (const [dx, dy] of (isCourt ? [] : shifts)) {
-    for (let y = 0; y < ch; y++) {
-      const sy = y - dy;
-      if (sy < 0 || sy >= ch) continue;
-      for (let x = 0; x < cw; x++) {
-        const i = y * cw + x;
-        if (!erase[i] || got[i]) continue;
-        const sx = x - dx;
-        if (sx < 0 || sx >= cw) continue;
+  // 消す画素ごとに、ずらし方を順に試して最初に見つかった元を使う（全体を何十回もなめるより速い）
+  if (!isCourt) {
+    for (let i = 0; i < n; i++) {
+      if (!erase[i]) continue;
+      const x = i % cw, y = (i / cw) | 0;
+      for (const [dx, dy] of shifts) {
+        const sx = x - dx, sy = y - dy;
+        if (sx < 0 || sx >= cw || sy < 0 || sy >= ch) continue;
         const j = sy * cw + sx;
         // 布目の揺れは数%。それより大きいのはマークのきわの明るい縁や影の境目なので、写す元にしない
-        if (cleanTex[j] && Math.abs(resid[j]) < 0.08) { tex[i] = resid[j]; got[i] = 1; }
+        if (cleanTex[j] && Math.abs(resid[j]) < 0.08) { tex[i] = resid[j]; got[i] = 1; break; }
       }
     }
   }

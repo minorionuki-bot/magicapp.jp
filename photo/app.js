@@ -18,7 +18,8 @@ const video = $('video'), preview = $('preview'), frameEl = $('frame');
 // 置き場所は app.js 自身の場所から数える。短いリンク（magicapp.jp/12345）のページは <base href="/photo/"> に頼っているが、
 // Safari はそれを無視することがあり、アドレス（/12345）から数えて読み込みに失敗した（2026-10-13）
 const here = (path) => new URL(path, import.meta.url).href;
-const worker = new Worker(here('./worker.js'), { type: 'module' });
+// 版の印（公開のときに index.html が app.js?v=… と付けて読む）を worker にも引き継ぐ
+const worker = new Worker(here(`./worker.js${new URL(import.meta.url).search}`), { type: 'module' });
 let nextId = 1;
 const pending = new Map();
 worker.onmessage = (e) => {
@@ -27,11 +28,15 @@ worker.onmessage = (e) => {
   pending.delete(e.data.id);
   e.data.type === 'error' ? p.reject(new Error(e.data.message)) : p.resolve(e.data);
 };
-function call(msg, transfer = []) {
+function call(msg, transfer = [], timeout = 15000) {
   const id = nextId++;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
     worker.postMessage({ ...msg, id }, transfer);
+    // 返事が来ないまま止まらないように（裏の処理が落ちた・古い版が混ざった など）
+    setTimeout(() => {
+      if (pending.delete(id)) reject(new Error(`裏の処理から返事がない（${msg.type}）`));
+    }, timeout);
   });
 }
 
@@ -92,7 +97,7 @@ async function syncLinkCard(timeoutMs) {
 syncLinkCard(5000);
 
 async function loadFace(name) {
-  const res = await fetch(here(`cards/${name}.webp`));
+  const res = await fetch(here(`cards/${name}.webp${new URL(import.meta.url).search}`));
   // 絵柄の素材がまだないカード：焼き込まずに元の写真をそのまま保存する（お客さんには普通の写真に見える）
   if (!res.ok) { await call({ type: 'face', data: null }); return; }
   const blob = await res.blob();
@@ -267,30 +272,42 @@ async function processPhoto(canvas, isFront, hint = null) {
   lastFile = null;
   shareWanted = 0;
   $('thumb').classList.add('busy');
-  // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す
-  const latest = await syncLinkCard(1500);
-  const log = [`${canvas.width}x${canvas.height} ${isFront ? '内カメラ' : '背面カメラ'} ${CARDS[card]}`
-    + (hint ? ` タップ ${hint.x.toFixed(2)},${hint.y.toFixed(2)}` : '')
-    + (linkId || linkCode ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : '')];
+  // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す。
+  // 読み直す通信は、カードを探して印刷を消す処理（どのカードに変えるかに関係しない）と同時に進める
+  const syncing = syncLinkCard(1500);
+  const log = [`${canvas.width}x${canvas.height} ${isFront ? '内カメラ' : '背面カメラ'}`
+    + (hint ? ` タップ ${hint.x.toFixed(2)},${hint.y.toFixed(2)}` : '')];
+  const ms = (x) => `${(x / 1000).toFixed(2)}秒`;
   try {
-    await faceReady;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const t0 = performance.now();
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const r = await call({ type: 'print', width: canvas.width, height: canvas.height, data, front: isFront, hint }, [data.buffer]);
-    log.push(`検出 ${(r.detectMs / 1000).toFixed(2)}秒 / 焼き込み ${(r.printMs / 1000).toFixed(2)}秒`);
+    const tRead = performance.now() - t0;
+    const a = await call({ type: 'analyze', width: canvas.width, height: canvas.height, data, front: isFront, hint }, [data.buffer]);
+    const latest = await syncing;
+    await faceReady;
+    log.push(`${CARDS[card]}` + (linkId || linkCode ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : ''));
+    const r = await call({ type: 'compose' });
+    log.push(`読み取り ${ms(tRead)} / 検出 ${ms(a.detectMs)} / 当てる ${ms(a.matchMs)} / 消す ${ms(a.eraseMs)} / 焼き込み ${ms(r.composeMs)}`);
     if (r.patch) {
       ctx.putImageData(new ImageData(r.patch.data, r.patch.width, r.patch.height), r.patch.x, r.patch.y);
-      log.push(r.erased ? '元の印刷を消して焼き込み成功' : '焼き込み成功');
+      log.push(a.erased ? '元の印刷を消して焼き込み成功' : '焼き込み成功');
     } else {
       // 見つからなかったときは元の写真をそのまま保存する（お客さんには普通の写真に見える）
-      log.push(!r.hasFace ? 'このカードの絵柄がまだない（元の写真を保存）'
-        : r.found ? '焼き込みに失敗（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
+      log.push(!r.hasFace ? 'このカードの絵柄がまだない（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
     }
+    const t1 = performance.now();
     const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
     lastFile = new File([blob], `IMG_${Date.now() % 10000}.JPG`, { type: 'image/jpeg' });
+    log.push(`JPEG ${ms(performance.now() - t1)}`);
     log.push(`保存の準備ができました（${((performance.now() - start) / 1000).toFixed(1)}秒）`);
   } catch (err) {
     log.push('失敗: ' + err.message);
+  }
+  // 失敗しても、撮った写真（焼き込めたところまで）は保存できるようにする（お客さんには普通の写真に見える）
+  if (!lastFile) {
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
+    if (blob) lastFile = new File([blob], `IMG_${Date.now() % 10000}.JPG`, { type: 'image/jpeg' });
   }
   $('log').textContent = log.join('\n');
   $('thumb').classList.remove('busy');
