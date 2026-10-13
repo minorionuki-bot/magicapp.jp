@@ -106,19 +106,36 @@ async function loadFace(name) {
 let front = storage('front') === '1';   // 本番は基本的に背面カメラ
 let stream = null;
 
+// カメラが映らないまま止まったとき、何を待っているかを画面に出す（iPhone でだけ起きて、Mac では再現できないため）
+let cameraStep = '';
+function showCameraWait() {
+  if (video.videoWidth) return;
+  $('message').textContent = `カメラが起動しません（${cameraStep}）。\nページを読み込み直すか、Safari の設定でカメラを「許可」にしてください。`;
+  $('message').style.display = 'flex';
+}
+window.addEventListener('error', (e) => { cameraStep = `エラー: ${e.message}`; showCameraWait(); });
+window.addEventListener('unhandledrejection', (e) => { cameraStep = `エラー: ${e.reason}`; showCameraWait(); });
+
 async function startCamera() {
   stream?.getTracks().forEach((t) => t.stop());
   preview.classList.toggle('mirror', front);
+  cameraStep = '許可を待っています';
+  const waitTimer = setTimeout(showCameraWait, 3000);
   try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('このブラウザではカメラを使えません');
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       // できるだけ高い解像度で（ブラウザが出せる範囲に自動で丸められる）
       video: { facingMode: front ? 'user' : 'environment', width: { ideal: 4032 }, height: { ideal: 3024 } },
     });
+    cameraStep = '映像を待っています';
     video.srcObject = stream;
     await video.play();
+    cameraStep = '映像の大きさを待っています';
+    clearTimeout(waitTimer);
     $('message').style.display = 'none';
   } catch (err) {
+    clearTimeout(waitTimer);
     $('message').textContent = 'カメラを使えません。\n' + (location.protocol !== 'https:' ? 'https で開いてください。' : String(err));
     $('message').style.display = 'flex';
   }
@@ -130,10 +147,7 @@ $('flip').onclick = () => {
   storage('front', front ? '1' : '0');
   live = null;
   showFrame();
-  // 画面の大きさが変わったら（Safari のツールバーの出し入れなど）枠を置き直す
-window.addEventListener('resize', showFrame);
-
-startCamera();
+  startCamera();
 };
 
 // MARK: 撮る前の枠（映像を1秒に5回ほど取り出して、撮影時と同じ検出にかける）
