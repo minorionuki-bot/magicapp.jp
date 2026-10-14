@@ -85,6 +85,8 @@
   #menu { position: fixed; inset: 0; background: #1c1c1e; display: none; flex-direction: column; overflow-y: auto;
     padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 24px); -webkit-user-select: text; user-select: text; }
   #menu.on { display: flex; }
+  /* 中の欄は縮めない（縮むと記録欄が1行に押しつぶされ、メニューもスクロールできなかった。2026-10-14） */
+  #menu > * { flex-shrink: 0; }
   #menu header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   #menu h1 { font-size: 17px; margin: 0; }
   #menu button.text { background: none; border: 0; color: #0a84ff; font-size: 17px; padding: 8px 0; }
@@ -138,10 +140,10 @@
 
 <div id="menu">
   <header><h1>演者用</h1><button class="text" id="closeMenu">閉じる</button></header>
-  <h2>変化させるカード</h2>
-  <div class="group" id="cards"></div>
   <h2>直前の撮影</h2>
   <div class="group"><div class="log" id="log">まだ撮影していません</div></div>
+  <h2>変化させるカード</h2>
+  <div class="group" id="cards"></div>
   <h2>調整用</h2>
   <div class="group">
     <label class="row">写真を選んで試す<input type="file" id="testFile" accept="image/*"></label>
@@ -153,7 +155,7 @@
   // 5桁の番号のときだけ撮影画面を動かす。それ以外は普通の「ページが見つかりません」
   if (/^\/\d{5}\/?$/.test(location.pathname)) {
     // Safari は <base> を無視して /app.js を読みにいき、何も動かなかった（2026-10-13）ので、置き場所をそのまま書く
-    import('/photo/app.js?v=20261014151212').catch((e) => {
+    import('/photo/app.js?v=20261014151622').catch((e) => {
       const m = document.getElementById('message');
       m.textContent = '読み込めませんでした。ページを読み込み直してください。\n' + e;
       m.style.display = 'flex';
