@@ -5,7 +5,7 @@
 import { CARD_W, CARD_H } from './printer.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-// 54枚の記号と名前（記号は「数字＋マーク」かジョーカー。絵柄は cards/<記号>.webp。まだ一部しかない）
+// 54枚の記号と名前（記号は「数字＋マーク」かジョーカー。絵柄は cards/<記号>.webp）
 const SUITS = { S: 'スペード', H: 'ハート', D: 'ダイヤ', C: 'クラブ' };
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const CARDS = { JK1: 'ジョーカー1', JK2: 'ジョーカー2' };
