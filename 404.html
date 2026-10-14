@@ -155,7 +155,7 @@
   // 5桁の番号のときだけ撮影画面を動かす。それ以外は普通の「ページが見つかりません」
   if (/^\/\d{5}\/?$/.test(location.pathname)) {
     // Safari は <base> を無視して /app.js を読みにいき、何も動かなかった（2026-10-13）ので、置き場所をそのまま書く
-    import('/photo/app.js?v=20261014172426').catch((e) => {
+    import('/photo/app.js?v=20261014212952').catch((e) => {
       const m = document.getElementById('message');
       const ja = /^ja\b/i.test(navigator.language || 'ja');
       m.textContent = (ja ? '読み込めませんでした。ページを読み込み直してください。\n' : 'Could not load. Please reload the page.\n') + e;

@@ -1086,7 +1086,7 @@ export function alignMarks(found, face) {
  * 印刷を消す。expectedHalf は、当てたカードのマークと数字のある場所（カードの座標の半分の大きさ、alignMarks の結果）。
  * なければ色だけで見分ける
  */
-export function eraseInk(quad, photo, expectedHalf = null) {
+export function eraseInk(quad, photo, expectedHalf = null, checkOnly = false) {
   const W = photo.width, H = photo.height;
   const cardW = len(sub(quad[1], quad[0]));
   const margin = cardW * 0.05;
@@ -1136,6 +1136,7 @@ export function eraseInk(quad, photo, expectedHalf = null) {
     if ((R[i] - Math.max(G[i], B[i])) / s0 > 0.55 || lum[i] < 0.25 * brightPaper) obvious++;
   }
   if (obvious * 2 <= insideCount / 400) return false;
+  if (checkOnly) return true;   // 印刷があるかだけを確かめる（無料版で印刷されたカードを見分ける）
 
   // マークの場所（写真の画素ごと）と、そのまわり（カード幅の5%。理由は Swift 側）
   let expected = null, nearMarks = null;
