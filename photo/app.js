@@ -292,8 +292,17 @@ async function processPhoto(canvas, isFront, hint = null) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const t0 = performance.now();
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    // カードを探す用の縮小（長辺1200px）は、ブラウザの描画機能に任せる（1画素ずつ計算すると iPhone で0.5秒前後かかった）
+    const ss = Math.min(1, 1200 / Math.max(canvas.width, canvas.height));
+    const sc = document.createElement('canvas');
+    sc.width = Math.round(canvas.width * ss); sc.height = Math.round(canvas.height * ss);
+    const sctx = sc.getContext('2d', { willReadFrequently: true });
+    sctx.imageSmoothingQuality = 'high';
+    sctx.drawImage(canvas, 0, 0, sc.width, sc.height);
+    const small = sctx.getImageData(0, 0, sc.width, sc.height).data;
     const tRead = performance.now() - t0;
-    const a = await call({ type: 'analyze', width: canvas.width, height: canvas.height, data, front: isFront, hint }, [data.buffer]);
+    const a = await call({ type: 'analyze', width: canvas.width, height: canvas.height, data, front: isFront, hint,
+      small: { width: sc.width, height: sc.height, data: small, scale: sc.width / canvas.width } }, [data.buffer, small.buffer]);
     const latest = await syncing;
     await faceReady;
     log.push(`${CARDS[card]}` + (linkId || linkCode ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : ''));

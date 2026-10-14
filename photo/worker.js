@@ -66,7 +66,10 @@ self.onmessage = async (e) => {
       // 演者の設定を読み直す通信と同時に進めるため、焼き込み（compose）と分けてある
       const photo = { width: m.width, height: m.height, data: m.data };
       const t0 = performance.now();
-      const { image: small, scale } = downscale(photo, 1200);
+      // 縮小した写真は app.js が描画機能で作って渡す（なければここで作る）
+      const { image: small, scale } = m.small
+        ? { image: { width: m.small.width, height: m.small.height, data: m.small.data }, scale: m.small.scale }
+        : downscale(photo, 1200);
       const corners = findCard(small, scale, m.hint);   // hint：タップで示された位置（割合）
       const t1 = performance.now();
       const expected = corners ? await expectedMarks(corners, photo) : null;
