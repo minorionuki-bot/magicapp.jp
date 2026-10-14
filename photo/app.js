@@ -206,6 +206,15 @@ function showFocus(x, y) {
   setTimeout(() => el.classList.add('faded'), 1200);
 }
 
+let liveSize = 640;     // 撮る前の枠を探すときの長辺（px）
+/** 次のコマを探す大きさ：カードが短い辺で70px未満に写っていたか、見つからなければ960px、十分大きければ640px */
+function nextLiveSize(corners) {
+  if (!corners) return 960;
+  const short = Math.min(Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y),
+    Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y));
+  return short * (640 / liveSize) < 70 ? 960 : 640;
+}
+
 let live = null;        // { corners: 映像に対する割合 0〜1, aspect: 映像の 幅÷高さ }
 let lastSeen = 0;
 let detecting = false;
@@ -216,15 +225,18 @@ setInterval(async () => {
   detecting = true;
   try {
     const vw = video.videoWidth, vh = video.videoHeight;
-    // 撮る前の枠は大まかな位置が分かればよいので、長辺 640px で探す（1200px だと1コマ0.3〜0.5秒かかり、
-    // 枠が1秒に2〜3回しか動かず遅れて見えた。2026-10-14）。撮った写真は今までどおり細かく探す
-    const s = Math.min(1, 640 / Math.max(vw, vh));
+    // 撮る前の枠は大まかな位置が分かればよいので、小さく縮めて探す（1200px だと1コマ0.3〜0.5秒かかり、
+    // 枠が1秒に2〜3回しか動かず遅れて見えた。2026-10-14）。ふだんは640px。ただしカードが遠くて小さく写ると
+    // 640px では見つからなかった（IMG_7116・7117）ので、カードが小さいときと見つからないときは960pxで探す。
+    // 撮った写真は今までどおり細かく探す
+    const s = Math.min(1, liveSize / Math.max(vw, vh));
     const w = Math.round(vw * s), h = Math.round(vh * s);
     detectCanvas.width = w; detectCanvas.height = h;
     const ctx = detectCanvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(video, 0, 0, w, h);
     const data = ctx.getImageData(0, 0, w, h).data;
     const r = await call({ type: 'detect', width: w, height: h, data, hint: currentHint() }, [data.buffer]);
+    liveSize = nextLiveSize(r.corners);
     if (r.corners) {
       // プレビューは内カメラだと鏡像なので、枠も左右を反転して重ねる
       let corners = r.corners.map((p) => ({ x: p.x / w, y: p.y / h }));
