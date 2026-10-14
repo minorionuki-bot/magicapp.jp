@@ -403,8 +403,24 @@ function shutterSound() {
     src.start(t0 + start);
     src.stop(t0 + start + dur + 0.01);
   };
-  burst(0, 0.035, 3800, 0.9);      // カ（シャッターが開く短い音）
-  burst(0.07, 0.11, 2300, 0.75);   // シャ（閉じる音、少し長く低め）
+  // 機械が当たる低い響き（高い雑音だけだと軽すぎた。2026-10-14）
+  const thump = (start, dur, freq, level) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t0 + start);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.6, t0 + start + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + start);
+    g.gain.exponentialRampToValueAtTime(level, t0 + start + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(t0 + start);
+    osc.stop(t0 + start + dur + 0.01);
+  };
+  burst(0, 0.03, 2600, 0.8);       // カ（シャッターが開く短い音）
+  thump(0, 0.05, 210, 0.55);
+  burst(0.065, 0.13, 1500, 0.9);   // シャ（閉じる音、長く低め）
+  thump(0.065, 0.08, 140, 0.65);
 }
 $('retake').onclick = () => {
   // 撮り直す：この写真は使わない（サムネイルも消す）
