@@ -41,9 +41,10 @@ function call(msg, transfer = [], timeout = 15000) {
 }
 
 // MARK: 変化させるカード
-// 本番は URL の ?id=（本体アプリが発行したリンク）で、カードはクラウドから読む。演者がアプリでカードを選び直すと、
-// 同じリンクのまま変わる（撮る直前まで変えられるよう、シャッターを押した瞬間にも読み直す）。
-// ?card=KH は試験用
+// 本番は URL の ?id=（本体アプリが発行したリンク）か短いリンクで、カードはクラウドから読む。
+// **読むのはリンクを開いたときの1回だけ**（2026-10-14、本人の判断）。演者はカードを決めてからリンクを開くので、
+// 撮る瞬間に読み直す必要はない。撮影時に通信しないので、電波の弱い会場でも「読めずに前のカード」にならない。
+// 開いたときに読めなければ、読めるまで裏で読み直す。?card=KH は試験用
 
 function storage(key, value) {
   try {
@@ -59,7 +60,9 @@ const linkCode = shortMatch ? Number(shortMatch[1]) : null;
 let card = params.get('card');
 if (!CARDS[card]) card = storage('card');
 if (!CARDS[card]) card = 'KH';
-let faceReady = loadFace(card);
+let faceReady = null;
+const hasLink = !!(linkId || linkCode);
+let linkLoaded = !hasLink;   // リンクのカードを読み終えたか（リンクがなければ読むものはない）
 
 /** クラウドからこのリンクのカードを読む。読めなければ null（timeoutMs で諦める） */
 async function fetchLinkCard(timeoutMs) {
@@ -85,16 +88,22 @@ async function fetchLinkCard(timeoutMs) {
   }
 }
 
-/** リンクのカードに合わせる（変わっていれば絵柄を読み直す） */
-async function syncLinkCard(timeoutMs) {
-  const latest = await fetchLinkCard(timeoutMs);
-  if (latest && CARDS[latest] && latest !== card) {
-    card = latest;
-    faceReady = loadFace(card);
+/** リンクのカードを読み、絵柄まで準備する。読めるまで間をあけて読み直す */
+async function loadLinkCard() {
+  for (let attempt = 1; ; attempt++) {
+    const value = await fetchLinkCard(5000);
+    if (value && CARDS[value]) {
+      card = value;
+      storage('card', value);   // 次に読めなかったときの「前のカード」
+      faceReady = loadFace(card);
+      linkLoaded = true;
+      return value;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(2000 * attempt, 6000)));
   }
-  return latest;
 }
-syncLinkCard(5000);
+const linkReady = hasLink ? loadLinkCard() : Promise.resolve(card);
+if (!hasLink) faceReady = loadFace(card);
 
 async function loadFace(name) {
   const res = await fetch(here(`cards/${name}.webp${new URL(import.meta.url).search}`));
@@ -282,9 +291,9 @@ async function processPhoto(canvas, isFront, hint = null) {
   shareWanted = 0;
   $('thumb').classList.add('busy');
   saveHint('準備中…', true);
-  // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す。
-  // 読み直す通信は、カードを探して印刷を消す処理（どのカードに変えるかに関係しない）と同時に進める
-  const syncing = syncLinkCard(1500);
+  // カードはリンクを開いたときに読んである。まだ読めていなければ、カードを探して消す処理と同時に少しだけ待つ
+  const cardWait = linkLoaded ? Promise.resolve(true)
+    : Promise.race([linkReady.then(() => true), new Promise((r) => setTimeout(() => r(false), 3000))]);
   const log = [`${canvas.width}x${canvas.height} ${isFront ? '内カメラ' : '背面カメラ'}`
     + (hint ? ` タップ ${hint.x.toFixed(2)},${hint.y.toFixed(2)}` : '')];
   const ms = (x) => `${(x / 1000).toFixed(2)}秒`;
@@ -303,9 +312,10 @@ async function processPhoto(canvas, isFront, hint = null) {
     const tRead = performance.now() - t0;
     const a = await call({ type: 'analyze', width: canvas.width, height: canvas.height, data, front: isFront, hint,
       small: { width: sc.width, height: sc.height, data: small, scale: sc.width / canvas.width } }, [data.buffer, small.buffer]);
-    const latest = await syncing;
+    const loaded = await cardWait;
+    if (!faceReady) faceReady = loadFace(card);   // リンクをまだ読めていない：前に使ったカード（なければ K♥）で焼き込む
     await faceReady;
-    log.push(`${CARDS[card]}` + (linkId || linkCode ? (latest ? '（リンクから）' : '（リンクを読めず、前のカード）') : ''));
+    log.push(`${CARDS[card]}` + (hasLink ? (loaded ? '（リンクから）' : '（リンクを読めず、前のカード）') : ''));
     const r = await call({ type: 'compose' });
     log.push(`読み取り ${ms(tRead)} / 検出 ${ms(a.detectMs)} / 当てる ${ms(a.matchMs)} / 消す ${ms(a.eraseMs)} / 焼き込み ${ms(r.composeMs)}`);
     if (r.patch) {
