@@ -1275,10 +1275,27 @@ export function eraseInk(quad, photo, expectedHalf = null) {
   // 使うのは消す画素と、そのまわり（穴の縁を合わせ直すときの出発点）だけ
   const need = erase.slice();
   dilate(need, cw, ch, 2);
-  const [fillR, fillG, fillB] = lowFill.map((d) => expand({ d, dw: wq.dw, dh: wq.dh }, F, cw, ch, need));
-  const filledF = expand({ d: lowFilled, dw: wq.dw, dh: wq.dh }, F, cw, ch, need);
+  // 元の大きさに戻すときは、紙の色が入ったマスだけで混ぜる。カードの外にかかるマスは色が入らず0のままで、
+  // そのまま混ぜるとカードの縁に近い消した跡が黒くなった（数字が縁ぎりぎりにあった写真。IMG_7113・7114、2026-10-14）。
+  // どのマスにも色がないところは、紙の色と明るさの目安で埋める
+  const fillR = new Float32Array(n), fillG = new Float32Array(n), fillB = new Float32Array(n);
   const filled = new Uint8Array(n);
-  for (let i = 0; i < n; i++) filled[i] = filledF[i] > 0.99 ? 1 : 0;
+  const expandFill = (only) => {
+    const wgt = expand({ d: lowFilled, dw: wq.dw, dh: wq.dh }, F, cw, ch, only);
+    const full = lowFill.map((d) => expand({ d, dw: wq.dw, dh: wq.dh }, F, cw, ch, only));
+    const dst = [fillR, fillG, fillB];
+    for (let i = 0; i < n; i++) {
+      if (!only[i]) continue;
+      if (wgt[i] > 1e-3) {
+        for (let c = 0; c < 3; c++) dst[c][i] = full[c][i] / wgt[i];
+      } else {
+        const l = paperEst[i] > 0 ? paperEst[i] : brightPaper;
+        for (let c = 0; c < 3; c++) dst[c][i] = pc[c] * 3 * l;
+      }
+      filled[i] = 1;
+    }
+  };
+  expandFill(need);
   // 絵札は消す範囲が広いので、縁の紙の色と明るさに、カード全体でなめらかな面（2次式）を当てはめて埋める
   if (isCourt) {
     const samples = [];
@@ -1332,12 +1349,7 @@ export function eraseInk(quad, photo, expectedHalf = null) {
     const mark = new Uint8Array(n);
     let marked = 0;
     for (let i = 0; i < n; i++) if (boundary[i] >= 2 && !need[i]) { mark[i] = 1; marked++; }
-    if (marked) {
-      lowFill.forEach((d, c) => {
-        const full = expand({ d, dw: wq.dw, dh: wq.dh }, F, cw, ch, mark), dst = [fillR, fillG, fillB][c];
-        for (let i = 0; i < n; i++) if (mark[i]) dst[i] = full[i];
-      });
-    }
+    if (marked) expandFill(mark);
     for (let it = 0; it < 30; it++) {
       for (let k = 0; k < holes.length; k++) {
         const s0 = nbStart[k], s1 = nbStart[k + 1];
