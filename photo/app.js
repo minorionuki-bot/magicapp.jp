@@ -356,8 +356,56 @@ function openReview() {
 function closeReview() { $('review').classList.remove('on'); }
 
 $('save').onclick = async () => {
+  // 「今撮った」と思わせるため、ここでシャッターの音を鳴らす（本人の希望。2026-10-14）。
+  // 共有画面は押した瞬間にしか開けないので、音を鳴らしたらすぐ続けて開く
+  shutterSound();
   if (await share()) closeReview();   // 共有画面を閉じただけ（保存しなかった）ときも確認画面は閉じる
 };
+
+// MARK: シャッターの音
+// iPhone のカメラの音は Apple の音源なので使わず、短い雑音を2回重ねて「カ・シャ」に聞こえる音をその場で作る。
+// マナーモードでも鳴らす（日本の iPhone のカメラはマナーモードでも鳴るので、そのほうが自然）。
+// 音は画面に触れた操作の中でしか鳴らせないので、最初に触れたときに準備しておく
+let audio = null;
+function audioContext() {
+  if (!audio) {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* 対応していないブラウザ */ }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audio = new AC();
+  }
+  if (audio.state === 'suspended') audio.resume();
+  return audio;
+}
+document.addEventListener('pointerdown', () => audioContext(), { once: true, capture: true });
+
+function shutterSound() {
+  const ctx = audioContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime + 0.005;
+  // 雑音を帯域で絞り、すぐ消える音にする（start 秒後に、dur 秒、中心の高さ freq、大きさ level）
+  const burst = (start, dur, freq, level) => {
+    const n = Math.ceil(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = freq;
+    band.Q.value = 0.9;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0 + start);
+    g.gain.exponentialRampToValueAtTime(level, t0 + start + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+    src.connect(band).connect(g).connect(ctx.destination);
+    src.start(t0 + start);
+    src.stop(t0 + start + dur + 0.01);
+  };
+  burst(0, 0.035, 3800, 0.9);      // カ（シャッターが開く短い音）
+  burst(0.07, 0.11, 2300, 0.75);   // シャ（閉じる音、少し長く低め）
+}
 $('retake').onclick = () => {
   // 撮り直す：この写真は使わない（サムネイルも消す）
   closeReview();
