@@ -502,6 +502,8 @@ export function findCard(small, scale, hint = null) {
   }
   // 絵札は紙が縁の細い輪だけなので、塗り広げても四角が埋まらない。タップの近くで白い縁が四角く続いていたら
   // その四角を使う。タップがなく何も見つからないときは、画面の真ん中をタップしたものとして探す（理由は Swift 側）
+  // それでもなければ、タップの周りで「周りより明るく色の少ない塊」を探す（サインで白い部分が細切れのカード。理由は Swift 側）
+  if (!best && !tapSeed && hintPoint) tapSeed = brightSeed(small, hintPoint);
   // タップで見つからなかったときも、最後に画面の真ん中から探す（理由は Swift 側）
   if (!best && !tapSeed) tapSeed = tappedSeed(small, edges, { x: w / 2, y: h / 2 });
   if (!bestIsTapped && (hintPoint || !best) && tapSeed) {
@@ -665,6 +667,64 @@ function tappedSeed(small, edges, hint) {
     if (!best || score > best.score) best = { score, quad: rect };
   }
   debugLog('tapped seed', best && best.quad.map((p) => `[${Math.round(p.x)},${Math.round(p.y)}]`).join(' '));
+  return best ? best.quad : null;
+}
+
+/** タップの周りで、周りより明るく（大津の方法）色の少ない塊を探し、穴を埋めてカードらしい四角を返す（理由は Swift 側） */
+function brightSeed(small, hint) {
+  const w = small.width, h = small.height, px = small.data;
+  const R = Math.floor(0.15 * Math.max(w, h));
+  const x0 = Math.max(0, Math.floor(hint.x) - R), y0 = Math.max(0, Math.floor(hint.y) - R);
+  const x1 = Math.min(w, Math.floor(hint.x) + R), y1 = Math.min(h, Math.floor(hint.y) + R);
+  const ww = x1 - x0, wh = y1 - y0;
+  if (ww <= 20 || wh <= 20) return null;
+  const total = ww * wh;
+  const lum = new Uint8Array(total), lowChroma = new Uint8Array(total), hist = new Int32Array(256);
+  for (let y = 0; y < wh; y++) {
+    for (let x = 0; x < ww; x++) {
+      const k = 4 * ((y0 + y) * w + x0 + x);
+      const r = px[k], g = px[k + 1], b = px[k + 2];
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      const l = Math.floor((r + g + b) / 3);
+      lum[y * ww + x] = l;
+      lowChroma[y * ww + x] = mx > 0 && (mx - mn) / mx < 0.25 ? 1 : 0;
+      hist[l]++;
+    }
+  }
+  let sumAll = 0;
+  for (let i = 0; i < 256; i++) sumAll += i * hist[i];
+  let wB = 0, sumB = 0, bestVar = -1, thr = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > bestVar) { bestVar = v; thr = t; }
+  }
+  const mask = new Uint8Array(total);
+  for (let i = 0; i < total; i++) if (lum[i] > thr && lowChroma[i]) mask[i] = 1;
+  erode(mask, ww, wh, 1); dilate(mask, ww, wh, 1);   // 小さな点を除く
+  dilate(mask, ww, wh, 4); erode(mask, ww, wh, 4);   // サインの線を埋める
+  const hx = hint.x - x0, hy = hint.y - y0;
+  let best = null;
+  for (const comp of regions(mask, ww, wh, 150)) {
+    const region = new Uint8Array(total);
+    for (const i of comp) region[i] = 1;
+    const area = comp.length + fillEnclosedHoles(region, ww, wh);
+    const rect = minAreaRect(comp.map((i) => ({ x: (i % ww) + 0.5, y: ((i / ww) | 0) + 0.5 })));
+    if (!rect) continue;
+    const a = len(sub(rect[1], rect[0])), b = len(sub(rect[3], rect[0]));
+    if (Math.min(a, b) <= 8) continue;
+    const aspect = Math.max(a, b) / Math.min(a, b), fill = area / (a * b);
+    const off = distanceToQuad({ x: hx, y: hy }, rect);
+    if (aspect <= 1.1 || aspect >= 1.8 || fill <= 0.75 || off >= 0.1 * Math.max(w, h)) continue;
+    const score = fill * Math.exp(-Math.pow((aspect - 1.4) / 0.2, 2)) * Math.exp(-Math.pow(off / (0.05 * Math.max(w, h)), 2));
+    if (!best || score > best.score) best = { score, quad: rect.map((p) => ({ x: p.x + x0, y: p.y + y0 })) };
+  }
+  debugLog('bright seed', best && best.quad.map((p) => `[${Math.round(p.x)},${Math.round(p.y)}]`).join(' '));
   return best ? best.quad : null;
 }
 
