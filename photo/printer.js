@@ -502,7 +502,8 @@ export function findCard(small, scale, hint = null) {
   }
   // 絵札は紙が縁の細い輪だけなので、塗り広げても四角が埋まらない。タップの近くで白い縁が四角く続いていたら
   // その四角を使う。タップがなく何も見つからないときは、画面の真ん中をタップしたものとして探す（理由は Swift 側）
-  if (!hintPoint && !best) tapSeed = tappedSeed(small, edges, { x: w / 2, y: h / 2 });
+  // タップで見つからなかったときも、最後に画面の真ん中から探す（理由は Swift 側）
+  if (!best && !tapSeed) tapSeed = tappedSeed(small, edges, { x: w / 2, y: h / 2 });
   if (!bestIsTapped && (hintPoint || !best) && tapSeed) {
     const ps = paperScore(tapSeed, small);
     if (ps) { debugLog('use tapped seed as is'); best = { score: 0, quad: tapSeed, paper: ps.paper }; }
@@ -601,6 +602,19 @@ function paperScore(q, small) {
   return { inner: innerHits / innerTotal, rim: rimHits / rimTotal, paper: source[source.length >> 1] };
 }
 
+/** 点から四角形までの距離（内側なら0） */
+function distanceToQuad(p, q) {
+  if (contains(q, p)) return 0;
+  let d = Infinity;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4];
+    const abx = b.x - a.x, aby = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / Math.max(abx * abx + aby * aby, 1e-9)));
+    d = Math.min(d, Math.hypot(p.x - (a.x + abx * t), p.y - (a.y + aby * t)));
+  }
+  return d;
+}
+
 /** 点が四角形の内側にあるか */
 function contains(q, p) {
   let sign = 0;
@@ -638,11 +652,16 @@ function tappedSeed(small, edges, hint) {
     const rect = minAreaRect(pts);
     if (!rect) continue;
     const a = len(sub(rect[1], rect[0])), b = len(sub(rect[3], rect[0]));
-    if (Math.min(a, b) <= 8 || !contains(rect, hint)) continue;
+    // タップがカードから少し外れても、画面の1割以内の四角なら認め、近いほど優先する（理由は Swift 側）
+    const off = distanceToQuad(hint, rect);
+    if (Math.min(a, b) <= 8 || off >= 0.1 * Math.max(w, h)) continue;
     const aspect = Math.max(a, b) / Math.min(a, b);
     const rim = rimCoverage(union, w, h, rect);
-    if (aspect <= 1.1 || aspect >= 1.8 || rim <= 0.7) continue;
-    const score = rim * Math.exp(-Math.pow((aspect - 1.4) / 0.2, 2));
+    // 撮る前の枠用に小さく縮めた映像では細い白い縁が削れ、続く割合が下がる（8♣ を床に置いた IMG_7118 で 0.81 → 0.56）。
+    // 枠は大まかでよいので、映像のときは基準を下げる（撮った写真は今までどおり）
+    const minRim = Math.max(w, h) < 1100 ? 0.55 : 0.7;
+    if (aspect <= 1.1 || aspect >= 1.8 || rim <= minRim) continue;
+    const score = rim * Math.exp(-Math.pow((aspect - 1.4) / 0.2, 2)) * Math.exp(-Math.pow(off / (0.05 * Math.max(w, h)), 2));
     if (!best || score > best.score) best = { score, quad: rect };
   }
   debugLog('tapped seed', best && best.quad.map((p) => `[${Math.round(p.x)},${Math.round(p.y)}]`).join(' '));
