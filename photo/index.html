@@ -28,7 +28,7 @@
   #flash.on { opacity: 1; transition: none; }
   /* 撮る前にカードを認識していることを知らせる枠。QRコードを読むときのような黄色の細い線 */
   #frame { position: absolute; left: 0; top: 0; border: 1.5px solid var(--yellow); border-radius: 10px;
-    opacity: 0; pointer-events: none; transition: opacity .3s ease-out, transform .3s ease-out, width .3s ease-out, height .3s ease-out; }
+    opacity: 0; pointer-events: none; transition: opacity .3s ease-out, transform .18s ease-out, width .18s ease-out, height .18s ease-out; }
   #frame.on { opacity: 1; }
   /* タップした場所に出すピント合わせの四角（標準のカメラと同じ見た目） */
   #focus { position: absolute; width: 76px; height: 76px; border: 1px solid var(--yellow); pointer-events: none;
@@ -47,10 +47,17 @@
     font-size: 13px; font-weight: 600; color: #fff; opacity: 0; transition: opacity .25s; pointer-events: none; }
   #saveHint.on { opacity: 1; }
   #saveHint.wait { color: rgba(255,255,255,.55); }
-  /* 保存を押したときに、焼き込んだ写真を画面いっぱいに一瞬見せる */
-  #peek { position: fixed; inset: 0; background: #000 center / contain no-repeat; opacity: 0; pointer-events: none;
-    transition: opacity .35s ease-out; z-index: 20; }
-  #peek.on { opacity: 1; transition: none; }
+  /* 確認画面：サムネイルを押すと、焼き込んだ写真を画面いっぱいに出して確かめてから保存する（撮り直しもできる） */
+  #review { position: fixed; inset: 0; z-index: 20; background: #000; display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none; transition: opacity .2s ease-out; }
+  #review.on { opacity: 1; pointer-events: auto; }
+  #reviewImage { flex: 1 1 auto; min-height: 0; background: center / contain no-repeat;
+    margin-top: env(safe-area-inset-top); }
+  #reviewBar { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 24px calc(20px + env(safe-area-inset-bottom)); }
+  #reviewBar button { font: 600 17px -apple-system, sans-serif; border: 0; border-radius: 999px; padding: 12px 22px; }
+  #retake { background: transparent; color: #fff; }
+  #save { background: #fff; color: #000; }
   #thumb { width: 48px; height: 48px; border-radius: 8px; background: #222 center / cover no-repeat; border: 0; padding: 0; }
   #thumb.empty { visibility: hidden; }
   /* 焼き込み中：サムネイルのまわりの細い輪をゆっくり明滅させる。押せば終わったときに自動で共有画面を開く */
@@ -90,7 +97,13 @@
 </style>
 </head>
 <body>
-<div id="peek"></div>
+<div id="review">
+  <div id="reviewImage"></div>
+  <div id="reviewBar">
+    <button id="retake">撮り直す</button>
+    <button id="save">保存</button>
+  </div>
+</div>
 <div id="app">
   <div id="top"></div>
   <div id="preview">
@@ -131,6 +144,6 @@
   <img id="testResult" alt="">
 </div>
 
-<script type="module" src="./app.js?v=20261014143718"></script>
+<script type="module" src="./app.js?v=20261014145236"></script>
 </body>
 </html>

@@ -202,7 +202,9 @@ setInterval(async () => {
   detecting = true;
   try {
     const vw = video.videoWidth, vh = video.videoHeight;
-    const s = Math.min(1, 1200 / Math.max(vw, vh));
+    // 撮る前の枠は大まかな位置が分かればよいので、長辺 640px で探す（1200px だと1コマ0.3〜0.5秒かかり、
+    // 枠が1秒に2〜3回しか動かず遅れて見えた。2026-10-14）。撮った写真は今までどおり細かく探す
+    const s = Math.min(1, 640 / Math.max(vw, vh));
     const w = Math.round(vw * s), h = Math.round(vh * s);
     detectCanvas.width = w; detectCanvas.height = h;
     const ctx = detectCanvas.getContext('2d', { willReadFrequently: true });
@@ -214,7 +216,7 @@ setInterval(async () => {
       let corners = r.corners.map((p) => ({ x: p.x / w, y: p.y / h }));
       if (front) corners = corners.map((p) => ({ x: 1 - p.x, y: p.y }));
       // 検出結果に毎回飛びつかず、前の位置から少しずつ寄せる（枠をカクカクさせない）
-      if (live) corners = corners.map((p, i) => ({ x: live.corners[i].x * 0.6 + p.x * 0.4, y: live.corners[i].y * 0.6 + p.y * 0.4 }));
+      if (live) corners = corners.map((p, i) => ({ x: live.corners[i].x * 0.45 + p.x * 0.55, y: live.corners[i].y * 0.45 + p.y * 0.55 }));
       live = { corners, aspect: w / h };
       lastSeen = performance.now();
     } else if (performance.now() - lastSeen > 500) {
@@ -226,7 +228,7 @@ setInterval(async () => {
   } finally {
     detecting = false;
   }
-}, 200);
+}, 120);
 
 /** 枠はカードと同じ縦横比（1:1.4）の角丸の四角で、カードの傾きと縦・横に合わせて回す */
 function showFrame() {
@@ -312,7 +314,7 @@ async function processPhoto(canvas, isFront, hint = null) {
   }
   $('log').textContent = log.join('\n');
   $('thumb').classList.remove('busy');
-  saveHint(lastFile ? 'タップして保存 ↓' : '');
+  saveHint(lastFile ? 'タップして確認・保存 ↓' : '');
   readyToShare();
   return lastFile;
 }
@@ -326,10 +328,10 @@ function showThumbnail(source) {
   $('thumb').classList.remove('empty');
 }
 
-// サムネイル → 共有画面（「画像を保存」でカメラロールへ）。
+// サムネイル → 確認画面 →「保存」→ 共有画面（「画像を保存」でカメラロールへ）。
 // 以前は焼き込みが終わる前（撮ってから数秒）に押しても何も起きず、何度も押してやっと開く状態だった（2026-10-13）。
-// 処理中に押されたら覚えておき、終わったら自動で開く。ただし Safari はタップから約5秒を過ぎると自動では開かせないので、
-// それより遅れたときはサムネイルを弾ませて「押せる」と知らせる
+// 処理中に押されたら覚えておき、終わったら確認画面を開く（共有画面は「保存」を押したその場で開くので、
+// Safari の「タップから時間がたつと開かせない」制限にかからない）。押されていなければサムネイルを弾ませて知らせる
 let shareWanted = 0;   // 処理中にサムネイルが押された時刻（0＝押されていない）
 let sharing = false;
 
@@ -341,22 +343,31 @@ function saveHint(text, waiting = false) {
   h.classList.toggle('wait', waiting);
 }
 
-/** 焼き込んだ写真を画面いっぱいに一瞬見せる（共有画面はこの上に開く） */
-let peekURL = null;
-function peek() {
+/** 確認画面：焼き込んだ写真を画面いっぱいに出す。ここで「保存」か「撮り直す」を選ぶ（2026-10-14。
+ * 保存のときに一瞬だけ見せると、認識する前に消えて驚かせた） */
+let reviewURL = null;
+function openReview() {
   if (!lastFile) return;
-  if (peekURL) URL.revokeObjectURL(peekURL);
-  peekURL = URL.createObjectURL(lastFile);
-  const el = $('peek');
-  el.style.backgroundImage = `url(${peekURL})`;
-  el.classList.add('on');
-  setTimeout(() => el.classList.remove('on'), 1000);
+  if (reviewURL) URL.revokeObjectURL(reviewURL);
+  reviewURL = URL.createObjectURL(lastFile);
+  $('reviewImage').style.backgroundImage = `url(${reviewURL})`;
+  $('review').classList.add('on');
 }
+function closeReview() { $('review').classList.remove('on'); }
+
+$('save').onclick = async () => {
+  if (await share()) closeReview();   // 共有画面を閉じただけ（保存しなかった）ときも確認画面は閉じる
+};
+$('retake').onclick = () => {
+  // 撮り直す：この写真は使わない（サムネイルも消す）
+  closeReview();
+  lastFile = null;
+  saveHint('');
+  $('thumb').classList.add('empty');
+};
 
 async function share() {
   if (!lastFile || sharing) return true;
-  // 共有画面はタップから時間がたつと開けないので、写真を見せるのと同時に開く
-  peek();
   if (navigator.canShare?.({ files: [lastFile] })) {
     sharing = true;
     try {
@@ -377,9 +388,10 @@ async function share() {
 
 function readyToShare() {
   if (!lastFile) return;
-  if (shareWanted && performance.now() - shareWanted < 4500) {
+  if (shareWanted) {
+    // 処理中にサムネイルが押されていたら、終わったところで確認画面を開く
     shareWanted = 0;
-    share().then((ok) => { if (!ok) bounce(); });
+    openReview();
     return;
   }
   shareWanted = 0;
@@ -394,7 +406,7 @@ function bounce() {
 }
 
 $('thumb').onclick = () => {
-  if (lastFile) share();
+  if (lastFile) openReview();
   else if ($('thumb').classList.contains('busy')) shareWanted = performance.now();
 };
 
