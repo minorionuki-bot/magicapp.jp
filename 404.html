@@ -42,6 +42,16 @@
     padding-bottom: env(safe-area-inset-bottom); }
   #mode { text-align: center; color: var(--yellow); font-size: 13px; font-weight: 600; letter-spacing: .04em; }
   #controls { display: flex; align-items: center; justify-content: space-between; padding: 0 32px; }
+  #thumbWrap { position: relative; width: 48px; height: 48px; }
+  /* サムネイルの真上（右に置くと、幅の狭い iPhone でシャッターと重なった） */
+  #saveHint { position: absolute; left: -2px; bottom: 58px; white-space: nowrap;
+    font-size: 13px; font-weight: 600; color: #fff; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #saveHint.on { opacity: 1; }
+  #saveHint.wait { color: rgba(255,255,255,.55); }
+  /* 保存を押したときに、焼き込んだ写真を画面いっぱいに一瞬見せる */
+  #peek { position: fixed; inset: 0; background: #000 center / contain no-repeat; opacity: 0; pointer-events: none;
+    transition: opacity .35s ease-out; z-index: 20; }
+  #peek.on { opacity: 1; transition: none; }
   #thumb { width: 48px; height: 48px; border-radius: 8px; background: #222 center / cover no-repeat; border: 0; padding: 0; }
   #thumb.empty { visibility: hidden; }
   /* 焼き込み中：サムネイルのまわりの細い輪をゆっくり明滅させる。押せば終わったときに自動で共有画面を開く */
@@ -81,6 +91,7 @@
 </style>
 </head>
 <body>
+<div id="peek"></div>
 <div id="app">
   <div id="top"></div>
   <div id="preview">
@@ -92,7 +103,11 @@
   <div id="bottom">
     <div id="mode">写真</div>
     <div id="controls">
-      <button id="thumb" class="empty" aria-label="直前の写真"></button>
+      <div id="thumbWrap">
+        <button id="thumb" class="empty" aria-label="直前の写真"></button>
+        <!-- 保存の案内（何を押せばいいかを文字で出す。2026-10-14） -->
+        <div id="saveHint"></div>
+      </div>
       <button id="shutter" aria-label="シャッター"></button>
       <button id="flip" aria-label="カメラを切り替え">
         <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -121,7 +136,7 @@
   // 5桁の番号のときだけ撮影画面を動かす。それ以外は普通の「ページが見つかりません」
   if (/^\/\d{5}\/?$/.test(location.pathname)) {
     // Safari は <base> を無視して /app.js を読みにいき、何も動かなかった（2026-10-13）ので、置き場所をそのまま書く
-    import('/photo/app.js?v=20261014141345').catch((e) => {
+    import('/photo/app.js?v=20261014143718').catch((e) => {
       const m = document.getElementById('message');
       m.textContent = '読み込めませんでした。ページを読み込み直してください。\n' + e;
       m.style.display = 'flex';

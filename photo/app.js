@@ -272,6 +272,7 @@ async function processPhoto(canvas, isFront, hint = null) {
   lastFile = null;
   shareWanted = 0;
   $('thumb').classList.add('busy');
+  saveHint('準備中…', true);
   // 撮る直前に演者がカードを選び直していても間に合うよう、シャッターを押した瞬間にも読み直す。
   // 読み直す通信は、カードを探して印刷を消す処理（どのカードに変えるかに関係しない）と同時に進める
   const syncing = syncLinkCard(1500);
@@ -311,6 +312,7 @@ async function processPhoto(canvas, isFront, hint = null) {
   }
   $('log').textContent = log.join('\n');
   $('thumb').classList.remove('busy');
+  saveHint(lastFile ? 'タップして保存 ↓' : '');
   readyToShare();
   return lastFile;
 }
@@ -331,12 +333,35 @@ function showThumbnail(source) {
 let shareWanted = 0;   // 処理中にサムネイルが押された時刻（0＝押されていない）
 let sharing = false;
 
+/** サムネイルの横の案内（何を押せばいいか）。text が空なら消す */
+function saveHint(text, waiting = false) {
+  const h = $('saveHint');
+  if (text) h.textContent = text;
+  h.classList.toggle('on', !!text);
+  h.classList.toggle('wait', waiting);
+}
+
+/** 焼き込んだ写真を画面いっぱいに一瞬見せる（共有画面はこの上に開く） */
+let peekURL = null;
+function peek() {
+  if (!lastFile) return;
+  if (peekURL) URL.revokeObjectURL(peekURL);
+  peekURL = URL.createObjectURL(lastFile);
+  const el = $('peek');
+  el.style.backgroundImage = `url(${peekURL})`;
+  el.classList.add('on');
+  setTimeout(() => el.classList.remove('on'), 1000);
+}
+
 async function share() {
   if (!lastFile || sharing) return true;
+  // 共有画面はタップから時間がたつと開けないので、写真を見せるのと同時に開く
+  peek();
   if (navigator.canShare?.({ files: [lastFile] })) {
     sharing = true;
     try {
       await navigator.share({ files: [lastFile] });
+      saveHint('');   // 保存の流れが終わったら案内は消す
     } catch (err) {
       sharing = false;
       // AbortError は共有画面を閉じただけ。それ以外（自動で開くのを Safari が許さなかった など）は失敗
