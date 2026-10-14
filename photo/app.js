@@ -13,6 +13,23 @@ for (const [s, name] of Object.entries(SUITS)) for (const r of RANKS) CARDS[r + 
 const $ = (id) => document.getElementById(id);
 const video = $('video'), preview = $('preview'), frameEl = $('frame');
 
+// お客さんに見える文字は、スマホの言語が日本語以外なら英語にする（海外の公演用。2026-10-14）。
+// 演者用メニューと記録は演者が読むので日本語のまま
+// ?lang=en / ?lang=ja で確かめられる
+const langParam = new URLSearchParams(location.search).get('lang');
+const EN = langParam ? langParam === 'en' : !/^ja\b/i.test(navigator.language || 'ja');
+const T = (ja, en) => (EN ? en : ja);
+if (EN) {
+  document.documentElement.lang = 'en';
+  document.title = 'Camera';
+  $('mode').textContent = 'PHOTO';
+  $('retake').textContent = 'Retake';
+  $('save').textContent = 'Save';
+  $('thumb').setAttribute('aria-label', 'Last photo');
+  $('shutter').setAttribute('aria-label', 'Shutter');
+  $('flip').setAttribute('aria-label', 'Switch camera');
+}
+
 // MARK: 裏の処理（worker）とのやりとり
 
 // 置き場所は app.js 自身の場所から数える。短いリンク（magicapp.jp/12345）のページは <base href="/photo/"> に頼っているが、
@@ -64,20 +81,41 @@ let faceReady = null;
 const hasLink = !!(linkId || linkCode);
 let linkLoaded = !hasLink;   // リンクのカードを読み終えたか（リンクがなければ読むものはない）
 
-/** クラウドからこのリンクのカードを読む。読めなければ null（timeoutMs で諦める） */
+// お客さんのページの設定（演者が本体アプリで選ぶ。2026-10-14）。sound＝保存でシャッター音、review＝保存前の確認画面
+const pageOptions = { sound: true, review: true };
+// 試験用：?sound=0 / ?review=0 で上書きできる（リンクの設定より後に読むので、こちらが優先）
+const optionOverrides = {};
+for (const k of Object.keys(pageOptions)) if (params.has(k)) optionOverrides[k] = params.get(k) !== '0';
+Object.assign(pageOptions, optionOverrides);
+
+async function rpc(fn, body, signal) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+    cache: 'no-store',
+  });
+  return res;
+}
+
+/** クラウドからこのリンクのカード（と設定）を読む。読めなければ null（timeoutMs で諦める） */
 async function fetchLinkCard(timeoutMs) {
   if (!linkId && !linkCode) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const [fn, body] = linkId ? ['magicphoto_get', { p_id: linkId }] : ['magicphoto_get_by_code', { p_code: linkCode }];
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
-      method: 'POST',
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-      cache: 'no-store',
-    });
+    const body = linkId ? { p_id: linkId } : { p_code: linkCode };
+    // カードと設定をまとめて読む窓口（server/supabase_003_options.sql）。まだなければ今までの窓口でカードだけ読む
+    let res = await rpc(linkId ? 'magicphoto_link_by_id' : 'magicphoto_link_by_code', body, ctrl.signal);
+    if (res.ok) {
+      const v = await res.json();
+      if (!v || typeof v.card !== 'string') return null;
+      for (const k of Object.keys(pageOptions)) if (typeof v.options?.[k] === 'boolean') pageOptions[k] = v.options[k];
+      Object.assign(pageOptions, optionOverrides);
+      return v.card;
+    }
+    res = await rpc(linkId ? 'magicphoto_get' : 'magicphoto_get_by_code', body, ctrl.signal);
     if (!res.ok) return null;
     const value = await res.json();
     return typeof value === 'string' ? value : null;
@@ -127,7 +165,8 @@ let stream = null;
 let cameraStep = '';
 function showCameraWait() {
   if (video.videoWidth) return;
-  $('message').textContent = `カメラが起動しません（${cameraStep}）。\nページを読み込み直すか、Safari の設定でカメラを「許可」にしてください。`;
+  $('message').textContent = T(`カメラが起動しません（${cameraStep}）。\nページを読み込み直すか、Safari の設定でカメラを「許可」にしてください。`,
+    `The camera did not start (${cameraStep}).\nReload the page, or allow the camera in Safari settings.`);
   $('message').style.display = 'flex';
 }
 window.addEventListener('error', (e) => { cameraStep = `エラー: ${e.message}`; showCameraWait(); });
@@ -139,7 +178,7 @@ async function startCamera() {
   cameraStep = '許可を待っています';
   const waitTimer = setTimeout(showCameraWait, 3000);
   try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('このブラウザではカメラを使えません');
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error(T('このブラウザではカメラを使えません', 'This browser cannot use the camera'));
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       // できるだけ高い解像度で（ブラウザが出せる範囲に自動で丸められる）
@@ -153,7 +192,8 @@ async function startCamera() {
     $('message').style.display = 'none';
   } catch (err) {
     clearTimeout(waitTimer);
-    $('message').textContent = 'カメラを使えません。\n' + (location.protocol !== 'https:' ? 'https で開いてください。' : String(err));
+    $('message').textContent = T('カメラを使えません。\n', 'Cannot use the camera.\n')
+      + (location.protocol !== 'https:' ? T('https で開いてください。', 'Open this page with https.') : String(err));
     $('message').style.display = 'flex';
   }
 }
@@ -302,7 +342,7 @@ async function processPhoto(canvas, isFront, hint = null) {
   $('save').disabled = true;
   shareWanted = 0;
   $('thumb').classList.add('busy');
-  saveHint('準備中…', true);
+  saveHint(T('準備中…', 'Preparing…'), true);
   // カードはリンクを開いたときに読んである。まだ読めていなければ、カードを探して消す処理と同時に少しだけ待つ
   const cardWait = linkLoaded ? Promise.resolve(true)
     : Promise.race([linkReady.then(() => true), new Promise((r) => setTimeout(() => r(false), 3000))]);
@@ -347,7 +387,7 @@ async function processPhoto(canvas, isFront, hint = null) {
   shot = canvas;
   $('log').textContent = log.join('\n');
   $('thumb').classList.remove('busy');
-  saveHint('タップして確認・保存 ↓');
+  saveHint(pageOptions.review ? T('タップして確認・保存 ↓', 'Tap to view & save ↓') : T('タップして保存 ↓', 'Tap to save ↓'));
   readyToShare();
   const t1 = performance.now();
   filePromise = new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92)).then((blob) => {
@@ -409,9 +449,9 @@ function closeReview() { $('review').classList.remove('on'); }
 
 $('save').onclick = async () => {
   if (!lastFile) return;   // JPEG がまだ（ふつうは確認画面を見ている間にできている）
-  // 「今撮った」と思わせるため、ここでシャッターの音を鳴らす（本人の希望。2026-10-14）。
+  // 「今撮った」と思わせるため、ここでシャッターの音を鳴らす（本人の希望。2026-10-14。演者が切れる）。
   // 共有画面は押した瞬間にしか開けないので、音を鳴らしたらすぐ続けて開く
-  shutterSound();
+  if (pageOptions.sound) shutterSound();
   if (await share()) closeReview();   // 共有画面を閉じただけ（保存しなかった）ときも確認画面は閉じる
 };
 
@@ -492,9 +532,11 @@ async function share() {
 function readyToShare() {
   if (!shot) return;
   if (shareWanted) {
-    // 処理中にサムネイルが押されていたら、終わったところで確認画面を開く
+    // 処理中にサムネイルが押されていたら、終わったところで確認画面を開く（確認画面を使わない設定なら共有画面を試し、
+    // Safari に止められたらサムネイルを弾ませる）
     shareWanted = 0;
-    openReview();
+    if (pageOptions.review) openReview();
+    else saveNow().then((ok) => { if (!ok) bounce(); });
     return;
   }
   shareWanted = 0;
@@ -508,8 +550,17 @@ function bounce() {
   t.classList.add('ready');
 }
 
+/** 確認画面を使わない設定のとき：シャッター音を鳴らし、JPEG ができるのを待ってすぐ共有画面を開く */
+async function saveNow() {
+  if (pageOptions.sound) shutterSound();
+  if (!lastFile && filePromise) await filePromise;
+  return share();
+}
+
 $('thumb').onclick = () => {
-  if (shot) openReview();
+  if (shot) {
+    if (pageOptions.review) openReview(); else saveNow();
+  }
   else if ($('thumb').classList.contains('busy')) shareWanted = performance.now();
 };
 
