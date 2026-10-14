@@ -22,7 +22,11 @@
      余った高さは下のボタンの部分に回す（両方を伸ばすと半分ずつ分け合って、プレビューが横長になった） */
   #preview { position: relative; width: 100%; flex: 0 1 calc(100vw * 4 / 3); min-height: 0;
     overflow: hidden; background: #000; }
-  #preview video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  /* 映像は動画の部品なので、iPhone の Safari が再生・停止のボタンを重ねて出すことがあった（低電力モードや、触れたとき）。
+     ボタンは出さず、触れても反応しないようにする（タップはその下の #preview が受ける） */
+  #preview video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+  video::-webkit-media-controls, video::-webkit-media-controls-panel, video::-webkit-media-controls-overlay-play-button,
+  video::-webkit-media-controls-start-playback-button { display: none !important; -webkit-appearance: none; }
   #preview.mirror video { transform: scaleX(-1); }   /* 内カメラは標準のカメラと同じく鏡像で見せる */
   #flash { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .25s ease-out; }
   #flash.on { opacity: 1; transition: none; }
@@ -51,8 +55,8 @@
   #review { position: fixed; inset: 0; z-index: 20; background: #000; display: flex; flex-direction: column;
     opacity: 0; pointer-events: none; transition: opacity .2s ease-out; }
   #review.on { opacity: 1; pointer-events: auto; }
-  #reviewImage { flex: 1 1 auto; min-height: 0; background: center / contain no-repeat;
-    margin-top: env(safe-area-inset-top); }
+  #reviewImage { flex: 1 1 auto; min-height: 0; width: 100%; margin-top: env(safe-area-inset-top); }
+  #save:disabled { opacity: .5; }
   #reviewBar { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center;
     padding: 16px 24px calc(20px + env(safe-area-inset-bottom)); }
   #reviewBar button { font: 600 17px -apple-system, sans-serif; border: 0; border-radius: 999px; padding: 12px 22px; }
@@ -98,7 +102,7 @@
 </head>
 <body>
 <div id="review">
-  <div id="reviewImage"></div>
+  <canvas id="reviewImage"></canvas>
   <div id="reviewBar">
     <button id="retake">撮り直す</button>
     <button id="save">保存</button>
@@ -107,7 +111,7 @@
 <div id="app">
   <div id="top"></div>
   <div id="preview">
-    <video id="video" playsinline muted autoplay></video>
+    <video id="video" playsinline muted autoplay disablepictureinpicture disableremoteplayback></video>
     <div id="frame"></div>
     <div id="flash"></div>
     <div id="message"></div>
@@ -144,6 +148,6 @@
   <img id="testResult" alt="">
 </div>
 
-<script type="module" src="./app.js?v=20261014150851"></script>
+<script type="module" src="./app.js?v=20261014151212"></script>
 </body>
 </html>

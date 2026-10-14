@@ -38,7 +38,8 @@ async function expectedMarks(corners, photo) {
 }
 
 let face = null;
-let analyzed = null;   // analyze の結果（compose で使う）
+let analyzed = null;
+let lastPrefetch = 0;   // 撮る前に素材を読み込んだ時刻   // analyze の結果（compose で使う）
 
 self.onmessage = async (e) => {
   const m = e.data;
@@ -48,9 +49,18 @@ self.onmessage = async (e) => {
       face = m.data ? makeCardFace({ width: CARD_W, height: CARD_H, data: m.data }) : null;   // null＝絵柄の素材なし
       self.postMessage({ type: 'face', id: m.id });
     } else if (m.type === 'detect') {
-      // 撮る前の枠：すでに長辺1200px程度に縮めた映像の1コマ
-      const corners = findCard({ width: m.width, height: m.height, data: m.data }, 1, m.hint);
+      // 撮る前の枠：すでに長辺640pxに縮めた映像の1コマ
+      const frame = { width: m.width, height: m.height, data: m.data };
+      const corners = findCard(frame, 1, m.hint);
       self.postMessage({ type: 'detect', id: m.id, corners, width: m.width, height: m.height });
+      // 撮る前のうちに、映っている印刷カードを当てて、その素材を読み込んでおく（撮ったあとに通信で取りにいくと、
+      // そのぶん保存まで待たせた。2026-10-14）。1秒に1回まで
+      if (corners && performance.now() - lastPrefetch > 1000) {
+        lastPrefetch = performance.now();
+        const index = await cardIndex();
+        const found = index && identifyCard(corners, frame, index);
+        if (found) template(found.name);
+      }
     } else if (m.type === 'analyze') {
       // 撮った写真のカードを探し、印刷されたカードなら当てて消すところまで（どのカードに変えるかに関係しない部分）。
       // 演者の設定を読み直す通信と同時に進めるため、焼き込み（compose）と分けてある

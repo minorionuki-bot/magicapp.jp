@@ -149,6 +149,11 @@ async function startCamera() {
   }
 }
 
+// 低電力モードなどで映像が自動で始まらなかったときは、画面に触れたところで始める（再生ボタンは出さない）
+document.addEventListener('pointerdown', () => {
+  if (video.srcObject && video.paused) video.play().catch(() => {});
+}, { capture: true });
+
 $('flip').onclick = () => {
   front = !front;
   tapHint = null;
@@ -272,6 +277,8 @@ async function processPhoto(canvas, isFront, hint = null) {
   const start = performance.now();
   showThumbnail(canvas);   // サムネイルは焼き込む前の白紙の写真
   lastFile = null;
+  shot = null;
+  $('save').disabled = true;
   shareWanted = 0;
   $('thumb').classList.add('busy');
   saveHint('準備中…', true);
@@ -299,25 +306,32 @@ async function processPhoto(canvas, isFront, hint = null) {
       // 見つからなかったときは元の写真をそのまま保存する（お客さんには普通の写真に見える）
       log.push(!r.hasFace ? 'このカードの絵柄がまだない（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
     }
-    const t1 = performance.now();
-    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
-    lastFile = new File([blob], `IMG_${Date.now() % 10000}.JPG`, { type: 'image/jpeg' });
-    log.push(`JPEG ${ms(performance.now() - t1)}`);
-    log.push(`保存の準備ができました（${((performance.now() - start) / 1000).toFixed(1)}秒）`);
+    log.push(`確認できるまで ${ms(performance.now() - start)}`);
   } catch (err) {
+    // 失敗しても、撮った写真（焼き込めたところまで）は保存できるようにする（お客さんには普通の写真に見える）
     log.push('失敗: ' + err.message);
   }
-  // 失敗しても、撮った写真（焼き込めたところまで）は保存できるようにする（お客さんには普通の写真に見える）
-  if (!lastFile) {
-    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
-    if (blob) lastFile = new File([blob], `IMG_${Date.now() % 10000}.JPG`, { type: 'image/jpeg' });
-  }
+  // 確認画面は、保存用の JPEG ができるのを待たずに出せるようにする（JPEG を作るのに1秒前後かかり、待ち時間が長かった。
+  // 2026-10-14）。JPEG はお客さんが確認画面で写真を見ている間に作る
+  shot = canvas;
   $('log').textContent = log.join('\n');
   $('thumb').classList.remove('busy');
-  saveHint(lastFile ? 'タップして確認・保存 ↓' : '');
+  saveHint('タップして確認・保存 ↓');
   readyToShare();
-  return lastFile;
+  const t1 = performance.now();
+  filePromise = new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92)).then((blob) => {
+    if (shot !== canvas || !blob) return null;   // 待っている間に撮り直された
+    lastFile = new File([blob], `IMG_${Date.now() % 10000}.JPG`, { type: 'image/jpeg' });
+    $('save').disabled = false;
+    log.push(`JPEG ${ms(performance.now() - t1)}（確認画面を見ている間に作る）`);
+    $('log').textContent = log.join('\n');
+    return lastFile;
+  });
+  return filePromise;
 }
+
+let shot = null;          // 焼き込み済みの写真（確認画面に出す）
+let filePromise = null;   // 保存用の JPEG（できたら lastFile に入る）
 
 function showThumbnail(source) {
   const t = document.createElement('canvas');
@@ -345,17 +359,25 @@ function saveHint(text, waiting = false) {
 
 /** 確認画面：焼き込んだ写真を画面いっぱいに出す。ここで「保存」か「撮り直す」を選ぶ（2026-10-14。
  * 保存のときに一瞬だけ見せると、認識する前に消えて驚かせた） */
-let reviewURL = null;
 function openReview() {
-  if (!lastFile) return;
-  if (reviewURL) URL.revokeObjectURL(reviewURL);
-  reviewURL = URL.createObjectURL(lastFile);
-  $('reviewImage').style.backgroundImage = `url(${reviewURL})`;
+  if (!shot) return;
   $('review').classList.add('on');
+  // 焼き込んだ写真を、画面に収まる大きさで描く（JPEG を待たない）
+  const c = $('reviewImage');
+  const dpr = window.devicePixelRatio || 1;
+  const W = c.clientWidth * dpr, H = c.clientHeight * dpr;
+  c.width = W; c.height = H;
+  const s = Math.min(W / shot.width, H / shot.height);
+  const w = shot.width * s, h = shot.height * s;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(shot, (W - w) / 2, (H - h) / 2, w, h);
 }
 function closeReview() { $('review').classList.remove('on'); }
 
 $('save').onclick = async () => {
+  if (!lastFile) return;   // JPEG がまだ（ふつうは確認画面を見ている間にできている）
   // 「今撮った」と思わせるため、ここでシャッターの音を鳴らす（本人の希望。2026-10-14）。
   // 共有画面は押した瞬間にしか開けないので、音を鳴らしたらすぐ続けて開く
   shutterSound();
@@ -410,6 +432,8 @@ $('retake').onclick = () => {
   // 撮り直す：この写真は使わない（サムネイルも消す）
   closeReview();
   lastFile = null;
+  shot = null;
+  $('save').disabled = true;
   saveHint('');
   $('thumb').classList.add('empty');
 };
@@ -435,7 +459,7 @@ async function share() {
 }
 
 function readyToShare() {
-  if (!lastFile) return;
+  if (!shot) return;
   if (shareWanted) {
     // 処理中にサムネイルが押されていたら、終わったところで確認画面を開く
     shareWanted = 0;
@@ -454,7 +478,7 @@ function bounce() {
 }
 
 $('thumb').onclick = () => {
-  if (lastFile) openReview();
+  if (shot) openReview();
   else if ($('thumb').classList.contains('busy')) shareWanted = performance.now();
 };
 
