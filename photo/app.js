@@ -482,13 +482,37 @@ function audioContext() {
     audio = new AC();
   }
   if (audio.state === 'suspended') audio.resume();
+  prepareShutter(audio);
   return audio;
 }
 document.addEventListener('pointerdown', () => audioContext(), { once: true, capture: true });
 
+// 保存の音は実際のシャッター音の録音（shutter.mp3。Pixabay の freesound_community「iphone camera capture」、
+// 2026-10-15 に本人が選んだ）。大きいと目立つので小さめに鳴らす。読めなかったときだけ、作った音で代わりに鳴らす
+const SHUTTER_VOLUME = 0.3;
+const shutterData = fetch(here(`shutter.mp3${new URL(import.meta.url).search}`)).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
+let shutterBuffer = null;
+async function prepareShutter(ctx) {
+  if (shutterBuffer) return;
+  const data = await shutterData;
+  if (!data) return;
+  try {
+    shutterBuffer = await new Promise((resolve, reject) => ctx.decodeAudioData(data.slice(0), resolve, reject));
+  } catch { /* 読めなければ作った音で鳴らす */ }
+}
+
 function shutterSound() {
   const ctx = audioContext();
   if (!ctx) return;
+  if (shutterBuffer) {
+    const src = ctx.createBufferSource();
+    src.buffer = shutterBuffer;
+    const g = ctx.createGain();
+    g.gain.value = SHUTTER_VOLUME;
+    src.connect(g).connect(ctx.destination);
+    src.start();
+    return;
+  }
   const t0 = ctx.currentTime + 0.005;
   // 雑音を帯域で絞り、すぐ消える音にする（start 秒後に、dur 秒、中心の高さ freq、大きさ level）
   const burst = (start, dur, freq, level) => {
