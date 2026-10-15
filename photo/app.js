@@ -484,7 +484,8 @@ function audioContext() {
     if (!AC) return null;
     audio = new AC();
   }
-  if (audio.state === 'suspended') audio.resume();
+  // ホーム画面から開いたときなどに 'interrupted'（止められた）のまま残ることがあるので、動いていなければ動かす
+  if (audio.state !== 'running') audio.resume().catch(() => {});
   prepareShutter(audio);
   return audio;
 }
@@ -507,7 +508,25 @@ async function prepareShutter(ctx) {
 // 「写真」の文字をタップすると、音だけ鳴らす（写真は撮らない。お客さんには何も起きないように見える場所）
 $('mode').addEventListener('click', () => { if (pageOptions.soundTap) shutterSound(); });
 
+// ふだんは <audio> で鳴らす（2026-10-15）。ホーム画面に追加して開いたページで、Web Audio の音が鳴らなかった
+// （Safari ではマナーモードでも鳴るように設定しているが、ホーム画面から開いたページではそれが効かないことがある）。
+// iPhone の <audio> は音量を変えられないので、小さめにした音のファイル（shutter_quiet.m4a、元の3割）を使う
+const shutterEl = new Audio(here(`shutter_quiet.m4a${new URL(import.meta.url).search}`));
+shutterEl.preload = 'auto';
+// iPhone は触れるまで読み込まないことがあるので、最初に触れたときに読み込んでおく（1回目の音が遅れないように）
+document.addEventListener('pointerdown', () => shutterEl.load(), { once: true, capture: true });
+
 function shutterSound() {
+  try {
+    shutterEl.currentTime = 0;
+    const p = shutterEl.play();
+    if (p) p.catch(() => shutterSoundWebAudio());
+    return;
+  } catch { /* 鳴らせなければ Web Audio で */ }
+  shutterSoundWebAudio();
+}
+
+function shutterSoundWebAudio() {
   const ctx = audioContext();
   if (!ctx) return;
   if (shutterBuffer) {
