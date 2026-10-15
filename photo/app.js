@@ -10,6 +10,10 @@ const SUITS = { S: 'スペード', H: 'ハート', D: 'ダイヤ', C: 'クラブ
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const CARDS = { JK1: 'ジョーカー1', JK2: 'ジョーカー2' };
 for (const [s, name] of Object.entries(SUITS)) for (const r of RANKS) CARDS[r + s] = `${name}の${r}`;
+// 自分で登録したカード（Pro。記号は MY-<UUID>）。画像はリンクと一緒にクラウドから届く（server/supabase_005_my_cards.sql）
+const isMine = (c) => typeof c === 'string' && /^MY-[0-9A-Fa-f-]{36}$/.test(c);
+const isCard = (c) => !!CARDS[c] || isMine(c);
+const cardName = (c) => (isMine(c) ? '自分の登録' : CARDS[c]);
 const $ = (id) => document.getElementById(id);
 const video = $('video'), preview = $('preview'), frameEl = $('frame');
 
@@ -76,7 +80,7 @@ const shortMatch = location.pathname.match(/^\/(\d{5})\/?$/);
 const linkCode = shortMatch ? Number(shortMatch[1]) : null;
 let card = params.get('card');
 if (!CARDS[card]) card = storage('card');
-if (!CARDS[card]) card = 'KH';
+if (!isCard(card) || (isMine(card) && !storage('myFace'))) card = 'KH';
 let faceReady = null;
 const hasLink = !!(linkId || linkCode);
 let linkLoaded = !hasLink;   // リンクのカードを読み終えたか（リンクがなければ読むものはない）
@@ -113,12 +117,12 @@ async function fetchLinkCard(timeoutMs) {
       if (!v || typeof v.card !== 'string') return null;
       for (const k of Object.keys(pageOptions)) if (typeof v.options?.[k] === 'boolean') pageOptions[k] = v.options[k];
       Object.assign(pageOptions, optionOverrides);
-      return v.card;
+      return { card: v.card, face: typeof v.face === 'string' ? v.face : null };
     }
     res = await rpc(linkId ? 'magicphoto_get' : 'magicphoto_get_by_code', body, ctrl.signal);
     if (!res.ok) return null;
     const value = await res.json();
-    return typeof value === 'string' ? value : null;
+    return typeof value === 'string' ? { card: value, face: null } : null;
   } catch {
     return null;
   } finally {
@@ -130,12 +134,13 @@ async function fetchLinkCard(timeoutMs) {
 async function loadLinkCard() {
   for (let attempt = 1; ; attempt++) {
     const value = await fetchLinkCard(5000);
-    if (value && CARDS[value]) {
-      card = value;
-      storage('card', value);   // 次に読めなかったときの「前のカード」
+    if (value && (CARDS[value.card] || (isMine(value.card) && value.face))) {
+      card = value.card;
+      if (value.face) storage('myFace', value.face);
+      storage('card', card);   // 次に読めなかったときの「前のカード」
       faceReady = loadFace(card);
       linkLoaded = true;
-      return value;
+      return card;
     }
     await new Promise((r) => setTimeout(r, Math.min(2000 * attempt, 6000)));
   }
@@ -144,10 +149,19 @@ const linkReady = hasLink ? loadLinkCard() : Promise.resolve(card);
 if (!hasLink) faceReady = loadFace(card);
 
 async function loadFace(name) {
-  const res = await fetch(here(`cards/${name}.webp${new URL(import.meta.url).search}`));
-  // 絵柄の素材がまだないカード：焼き込まずに元の写真をそのまま保存する（お客さんには普通の写真に見える）
-  if (!res.ok) { await call({ type: 'face', data: null }); return; }
-  const blob = await res.blob();
+  let blob;
+  if (isMine(name)) {
+    // 自分の登録：リンクと一緒に届いた JPEG（base64）
+    const b64 = storage('myFace');
+    if (!b64) { await call({ type: 'face', data: null }); return; }
+    const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+    blob = new Blob([bytes], { type: 'image/jpeg' });
+  } else {
+    const res = await fetch(here(`cards/${name}.webp${new URL(import.meta.url).search}`));
+    // 絵柄の素材がまだないカード：焼き込まずに元の写真をそのまま保存する（お客さんには普通の写真に見える）
+    if (!res.ok) { await call({ type: 'face', data: null }); return; }
+    blob = await res.blob();
+  }
   const bitmap = await createImageBitmap(blob);
   const canvas = new OffscreenCanvas(CARD_W, CARD_H);
   const ctx = canvas.getContext('2d');
@@ -367,7 +381,7 @@ async function processPhoto(canvas, isFront, hint = null) {
     const loaded = await cardWait;
     if (!faceReady) faceReady = loadFace(card);   // リンクをまだ読めていない：前に使ったカード（なければ K♥）で焼き込む
     await faceReady;
-    log.push(`${CARDS[card]}` + (hasLink ? (loaded ? '（リンクから）' : '（リンクを読めず、前のカード）') : ''));
+    log.push(`${cardName(card)}` + (hasLink ? (loaded ? '（リンクから）' : '（リンクを読めず、前のカード）') : ''));
     const r = await call({ type: 'compose' });
     log.push(`読み取り ${ms(tRead)} / 検出 ${ms(a.detectMs)} / 当てる ${ms(a.matchMs)} / 消す ${ms(a.eraseMs)} / 焼き込み ${ms(r.composeMs)}`);
     if (r.patch) {
