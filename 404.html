@@ -6,6 +6,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
+<!-- ホーム画面に追加したときのアイコンと名前（2026-10-15、本人の希望）。演者が自分のリンクをホーム画面に置くと、
+     アプリを開かずにカメラのように起動できる。置き場所は短いリンク（/12345）からも届くように絶対パスで書く -->
+<link rel="apple-touch-icon" href="/photo/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/photo/icon-512.png">
+<meta name="apple-mobile-web-app-title" content="カメラ">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
 <meta name="robots" content="noindex, nofollow">  <!-- 検索に載せない（あとで検索されて仕掛けが見つからないように） -->
 <title>カメラ</title>
@@ -155,7 +161,7 @@
   // 5桁の番号のときだけ撮影画面を動かす。それ以外は普通の「ページが見つかりません」
   if (/^\/\d{5}\/?$/.test(location.pathname)) {
     // Safari は <base> を無視して /app.js を読みにいき、何も動かなかった（2026-10-13）ので、置き場所をそのまま書く
-    import('/photo/app.js?v=20261015123917').catch((e) => {
+    import('/photo/app.js?v=20261015125727').catch((e) => {
       const m = document.getElementById('message');
       const ja = /^ja\b/i.test(navigator.language || 'ja');
       m.textContent = (ja ? '読み込めませんでした。ページを読み込み直してください。\n' : 'Could not load. Please reload the page.\n') + e;
