@@ -72,14 +72,12 @@ self.onmessage = async (e) => {
         : downscale(photo, 1200);
       const corners = findCard(small, scale, m.hint);   // hint：タップで示された位置（割合）
       const t1 = performance.now();
-      // 印刷されたカードを別のカードに変えるのは Pro。無料版で印刷されたカードなら、変化させずに元の写真を保存する
-      const printedButFree = corners && !m.allowErase && eraseInk(corners, photo, null, true);
-      const expected = corners && !printedButFree && m.allowErase ? await expectedMarks(corners, photo) : null;
+      const expected = corners ? await expectedMarks(corners, photo) : null;
       const t2 = performance.now();
-      const erased = corners && !printedButFree && m.allowErase ? eraseInk(corners, photo, expected) : false;
+      const erased = corners ? eraseInk(corners, photo, expected) : false;
       const t3 = performance.now();
-      analyzed = { id: m.id, photo, corners: printedButFree ? null : corners, erased, front: m.front };
-      self.postMessage({ type: 'analyze', id: m.id, found: !!corners, erased, printedButFree,
+      analyzed = { id: m.id, photo, corners, erased, front: m.front };
+      self.postMessage({ type: 'analyze', id: m.id, found: !!corners, erased,
         detectMs: t1 - t0, matchMs: t2 - t1, eraseMs: t3 - t2 });
     } else if (m.type === 'compose') {
       // 直前に analyze した写真に、今のカードを焼き込む

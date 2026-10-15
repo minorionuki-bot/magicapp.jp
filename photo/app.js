@@ -82,7 +82,7 @@ const hasLink = !!(linkId || linkCode);
 let linkLoaded = !hasLink;   // リンクのカードを読み終えたか（リンクがなければ読むものはない）
 
 // お客さんのページの設定（演者が本体アプリで選ぶ。2026-10-14）。sound＝保存でシャッター音、review＝保存前の確認画面
-const pageOptions = { sound: true, review: true, pro: false };
+const pageOptions = { sound: true, review: true };
 // 試験用：?sound=0 / ?review=0 で上書きできる（リンクの設定より後に読むので、こちらが優先）
 const optionOverrides = {};
 for (const k of Object.keys(pageOptions)) if (params.has(k)) optionOverrides[k] = params.get(k) !== '0';
@@ -363,7 +363,6 @@ async function processPhoto(canvas, isFront, hint = null) {
     const small = sctx.getImageData(0, 0, sc.width, sc.height).data;
     const tRead = performance.now() - t0;
     const a = await call({ type: 'analyze', width: canvas.width, height: canvas.height, data, front: isFront, hint,
-      allowErase: pageOptions.pro,
       small: { width: sc.width, height: sc.height, data: small, scale: sc.width / canvas.width } }, [data.buffer, small.buffer]);
     const loaded = await cardWait;
     if (!faceReady) faceReady = loadFace(card);   // リンクをまだ読めていない：前に使ったカード（なければ K♥）で焼き込む
@@ -376,8 +375,7 @@ async function processPhoto(canvas, isFront, hint = null) {
       log.push(a.erased ? '元の印刷を消して焼き込み成功' : '焼き込み成功');
     } else {
       // 見つからなかったときは元の写真をそのまま保存する（お客さんには普通の写真に見える）
-      log.push(a.printedButFree ? '印刷されたカード（別のカードに変えるのは Pro）。元の写真を保存'
-        : !r.hasFace ? 'このカードの絵柄がまだない（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
+      log.push(!r.hasFace ? 'このカードの絵柄がまだない（元の写真を保存）' : 'カードが見つからない（元の写真を保存）');
     }
     log.push(`確認できるまで ${ms(performance.now() - start)}`);
   } catch (err) {
