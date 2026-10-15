@@ -85,8 +85,10 @@ let faceReady = null;
 const hasLink = !!(linkId || linkCode);
 let linkLoaded = !hasLink;   // リンクのカードを読み終えたか（リンクがなければ読むものはない）
 
-// お客さんのページの設定（演者が本体アプリで選ぶ。2026-10-14）。sound＝保存でシャッター音、review＝保存前の確認画面
-const pageOptions = { sound: true, review: true };
+// お客さんのページの設定（演者が本体アプリで選ぶ。2026-10-14）。sound＝シャッター音、review＝保存前の確認画面、
+// soundOnShot＝音を撮るときに鳴らす（false なら保存を押したとき）、soundTap＝「写真」の文字をタップすると音だけ鳴らす
+// （掛け声に合わせて鳴らすため。2026-10-15、本人の希望）
+const pageOptions = { sound: true, review: true, soundOnShot: false, soundTap: false };
 // 試験用：?sound=0 / ?review=0 で上書きできる（リンクの設定より後に読むので、こちらが優先）
 const optionOverrides = {};
 for (const k of Object.keys(pageOptions)) if (params.has(k)) optionOverrides[k] = params.get(k) !== '0';
@@ -339,6 +341,7 @@ let lastFile = null;
 
 $('shutter').onclick = async () => {
   if (!video.videoWidth) return;
+  if (pageOptions.sound && pageOptions.soundOnShot) shutterSound();
   $('flash').classList.add('on');
   requestAnimationFrame(() => requestAnimationFrame(() => $('flash').classList.remove('on')));
   const vw = video.videoWidth, vh = video.videoHeight;
@@ -465,7 +468,7 @@ $('save').onclick = async () => {
   if (!lastFile) return;   // JPEG がまだ（ふつうは確認画面を見ている間にできている）
   // 「今撮った」と思わせるため、ここでシャッターの音を鳴らす（本人の希望。2026-10-14。演者が切れる）。
   // 共有画面は押した瞬間にしか開けないので、音を鳴らしたらすぐ続けて開く
-  if (pageOptions.sound) shutterSound();
+  if (pageOptions.sound && !pageOptions.soundOnShot) shutterSound();
   if (await share()) closeReview();   // 共有画面を閉じただけ（保存しなかった）ときも確認画面は閉じる
 };
 
@@ -500,6 +503,9 @@ async function prepareShutter(ctx) {
     shutterBuffer = await new Promise((resolve, reject) => ctx.decodeAudioData(data.slice(0), resolve, reject));
   } catch { /* 読めなければ作った音で鳴らす */ }
 }
+
+// 「写真」の文字をタップすると、音だけ鳴らす（写真は撮らない。お客さんには何も起きないように見える場所）
+$('mode').addEventListener('click', () => { if (pageOptions.soundTap) shutterSound(); });
 
 function shutterSound() {
   const ctx = audioContext();
@@ -590,7 +596,7 @@ function bounce() {
 
 /** 確認画面を使わない設定のとき：シャッター音を鳴らし、JPEG ができるのを待ってすぐ共有画面を開く */
 async function saveNow() {
-  if (pageOptions.sound) shutterSound();
+  if (pageOptions.sound && !pageOptions.soundOnShot) shutterSound();
   if (!lastFile && filePromise) await filePromise;
   return share();
 }

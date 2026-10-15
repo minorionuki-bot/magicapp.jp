@@ -49,7 +49,8 @@
     text-align: center; color: #aaa; font-size: 15px; line-height: 1.6; }
   #bottom { flex: 1 0 150px; display: flex; flex-direction: column; justify-content: center; gap: 18px;
     padding-bottom: env(safe-area-inset-bottom); }
-  #mode { text-align: center; color: var(--yellow); font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+  #mode { text-align: center; color: var(--yellow); font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    padding: 10px 0; margin: -10px auto; width: 120px; }  /* タップで音だけ鳴らす（設定で）。押しやすいように当たりを広げる */
   #controls { display: flex; align-items: center; justify-content: space-between; padding: 0 32px; }
   #thumbWrap { position: relative; width: 48px; height: 48px; }
   /* サムネイルの真上（右に置くと、幅の狭い iPhone でシャッターと重なった） */
@@ -156,6 +157,6 @@
   <img id="testResult" alt="">
 </div>
 
-<script type="module" src="./app.js?v=20261015125727"></script>
+<script type="module" src="./app.js?v=20261015130348"></script>
 </body>
 </html>

@@ -50,7 +50,8 @@
     text-align: center; color: #aaa; font-size: 15px; line-height: 1.6; }
   #bottom { flex: 1 0 150px; display: flex; flex-direction: column; justify-content: center; gap: 18px;
     padding-bottom: env(safe-area-inset-bottom); }
-  #mode { text-align: center; color: var(--yellow); font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+  #mode { text-align: center; color: var(--yellow); font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    padding: 10px 0; margin: -10px auto; width: 120px; }  /* タップで音だけ鳴らす（設定で）。押しやすいように当たりを広げる */
   #controls { display: flex; align-items: center; justify-content: space-between; padding: 0 32px; }
   #thumbWrap { position: relative; width: 48px; height: 48px; }
   /* サムネイルの真上（右に置くと、幅の狭い iPhone でシャッターと重なった） */
@@ -161,7 +162,7 @@
   // 5桁の番号のときだけ撮影画面を動かす。それ以外は普通の「ページが見つかりません」
   if (/^\/\d{5}\/?$/.test(location.pathname)) {
     // Safari は <base> を無視して /app.js を読みにいき、何も動かなかった（2026-10-13）ので、置き場所をそのまま書く
-    import('/photo/app.js?v=20261015125727').catch((e) => {
+    import('/photo/app.js?v=20261015130348').catch((e) => {
       const m = document.getElementById('message');
       const ja = /^ja\b/i.test(navigator.language || 'ja');
       m.textContent = (ja ? '読み込めませんでした。ページを読み込み直してください。\n' : 'Could not load. Please reload the page.\n') + e;
