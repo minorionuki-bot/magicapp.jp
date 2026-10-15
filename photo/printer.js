@@ -1395,10 +1395,16 @@ export function eraseInk(quad, photo, expectedHalf = null) {
   // 数字札：穴の縁の色をなめらかにつなぐ（ラプラス方程式を SOR 法で。絵札には使わない。理由は Swift 側）
   if (!isCourt) {
     const boundary = new Uint8Array(n);   // 1 = 縁の値として使う紙、2 = 解く穴
+    // 位置が分かっているときは、暗い画素を穴に含めるのもマークの近くだけ。
+    // マークの近くの範囲の外まで続いている暗がりは影なので穴にしない（IMG_7144。理由は Swift 側）
+    const dark = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (inside[i] && !skin[i] && !erase[i] && lum[i] < 0.6 * paperEst[i]) dark[i] = 1;
+    if (nearMarks) {
+      for (const blob of regions(dark, cw, ch, 1)) if (blob.some((i) => !nearMarks[i])) for (const i of blob) dark[i] = 0;
+    }
     for (let i = 0; i < n; i++) {
       if (!inside[i] || skin[i]) continue;
-      // 位置が分かっているときは、暗い画素を穴に含めるのもマークの近くだけ
-      boundary[i] = erase[i] || (lum[i] < 0.6 * paperEst[i] && (!nearMarks || nearMarks[i])) ? 2 : 1;
+      boundary[i] = erase[i] || dark[i] ? 2 : 1;
     }
     const island = new Uint8Array(n);
     for (let i = 0; i < n; i++) if (boundary[i] === 1) island[i] = 1;
