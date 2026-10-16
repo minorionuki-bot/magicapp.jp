@@ -459,6 +459,8 @@ export function downscale(image, maxSide) {
  * small は長辺1200pxに縮めた画像、scale はその縮小率（small の幅 ÷ 元の幅）
  */
 export function findCard(small, scale, hint = null) {
+  // 部屋の照明の色と暗さを打ち消してから探す（探すための縮小画像の写しだけ。理由は Swift 側の balanceLight）
+  small = balanceLight(small);
   const w = small.width, h = small.height, px = small.data;
   const lum = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) lum[i] = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2];
@@ -492,7 +494,11 @@ export function findCard(small, scale, hint = null) {
     debugLog('  quad', region.quad.map((p) => `[${Math.round(p.x / scale)},${Math.round(p.y / scale)}]`).join(' '), 'aspect', aspect.toFixed(2), 'border', touchesBorder);
     // 指で角が欠けた、印刷されたカードでも通るように 0.65。中央に近いものを優先する（理由は Swift 側）
     const tapped = hintPoint ? contains(region.quad, hintPoint) : false;
-    if (region.fill <= (tapped ? 0.5 : 0.65) || touchesBorder || aspect < 1.1 || aspect > 1.7) continue;
+    // タップがあるときは、タップした場所のカードしか採らない（画面の3%までの外れは認める。理由は Swift 側）
+    if (hintPoint && !tapped && distanceToQuad(hintPoint, region.quad) > 0.03 * Math.max(w, h)) continue;
+    // 斜めに持つと縦長に写る。紙が四角をほぼ埋めているときだけ 1.95 まで認める
+    const maxAspect = region.fill > 0.9 ? 1.95 : 1.7;
+    if (region.fill <= (tapped ? 0.5 : 0.65) || touchesBorder || aspect < 1.1 || aspect > maxAspect) continue;
     const likeCard = Math.exp(-Math.pow((aspect - 1.4) / 0.2, 2));
     const cx = region.quad.reduce((a, p) => a + p.x, 0) / 4, cy = region.quad.reduce((a, p) => a + p.y, 0) / 4;
     const off = Math.hypot(cx - w / 2, cy - h / 2) / (Math.hypot(w, h) / 2);
@@ -504,8 +510,10 @@ export function findCard(small, scale, hint = null) {
   // その四角を使う。タップがなく何も見つからないときは、画面の真ん中をタップしたものとして探す（理由は Swift 側）
   // それでもなければ、タップの周りで「周りより明るく色の少ない塊」を探す（サインで白い部分が細切れのカード。理由は Swift 側）
   if (!best && !tapSeed && hintPoint) tapSeed = brightSeed(small, hintPoint);
-  // タップで見つからなかったときも、最後に画面の真ん中から探す（理由は Swift 側）
-  if (!best && !tapSeed) tapSeed = tappedSeed(small, edges, { x: w / 2, y: h / 2 });
+  // それでもなければ、タップした所の紙の色と同じ色の面を広げる（逆光でカードが暗いとき。理由は Swift 側）
+  if (!best && !tapSeed && hintPoint) tapSeed = similarSeed(small, hintPoint);
+  // 画面の真ん中から探すのは、タップがないときだけ（理由は Swift 側）
+  if (!best && !tapSeed && !hintPoint) tapSeed = tappedSeed(small, edges, { x: w / 2, y: h / 2 });
   if (!bestIsTapped && (hintPoint || !best) && tapSeed) {
     const ps = paperScore(tapSeed, small);
     if (ps) { debugLog('use tapped seed as is'); best = { score: 0, quad: tapSeed, paper: ps.paper }; }
@@ -519,6 +527,105 @@ export function findCard(small, scale, hint = null) {
     corners = [corners[1], corners[2], corners[3], corners[0]];
   }
   return corners;
+}
+
+/** 部屋の照明の色と暗さを打ち消した写しを返す（2026-10-16。理由と数値は Swift 側の balanceLight） */
+export function balanceLight(small) {
+  const n = small.width * small.height, src = small.data;
+  const hist = new Int32Array(256);
+  for (let i = 0; i < n; i += 2) {
+    const k = 4 * i;
+    hist[((src[k] * 299 + src[k + 1] * 587 + src[k + 2] * 114) / 1000) | 0]++;
+  }
+  let count = 0;
+  for (let v = 0; v < 256; v++) count += hist[v];
+  const percentile = (q) => {
+    const target = Math.floor(count * q);
+    let acc = 0;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= target) return v; }
+    return 255;
+  };
+  const lo = percentile(0.70), hi = percentile(0.99);
+  let sr = 0, sg = 0, sb = 0, c = 0;
+  for (let i = 0; i < n; i += 2) {
+    const k = 4 * i;
+    const r = src[k], g = src[k + 1], b = src[k + 2];
+    const l = ((r * 299 + g * 587 + b * 114) / 1000) | 0;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (l < lo || l > hi || mx >= 250 || mx - mn >= 0.35 * mx) continue;
+    sr += r; sg += g; sb += b; c++;
+  }
+  if (c <= 100) return small;
+  const m = (sr + sg + sb) / 3;
+  const gain = (v) => Math.min(Math.max(Math.pow(m / Math.max(v, 1), 0.8), 0.7), 1.6);
+  const gr = gain(sr), gg = gain(sg), gb = gain(sb);
+  const p95 = percentile(0.95) * (gr * 0.299 + gg * 0.587 + gb * 0.114);
+  const lift = Math.min(Math.max(200 / Math.max(p95, 1), 1), 1.8);
+  debugLog('balance light gains', gr.toFixed(3), gg.toFixed(3), gb.toFixed(3), 'lift', lift.toFixed(3));
+  const out = new Uint8ClampedArray(src.length);
+  const fr = gr * lift, fg = gg * lift, fb = gb * lift;
+  for (let i = 0; i < n; i++) {
+    const k = 4 * i;
+    out[k] = src[k] * fr; out[k + 1] = src[k + 1] * fg; out[k + 2] = src[k + 2] * fb; out[k + 3] = 255;
+  }
+  return { width: small.width, height: small.height, data: out };
+}
+
+/** タップした所から、紙と同じ色の面を広げてカードの形を取る（逆光・背景が白いとき用。理由は Swift 側の similarSeed） */
+function similarSeed(small, hint) {
+  const w = small.width, h = small.height, px = small.data;
+  const r = Math.floor(0.025 * Math.max(w, h));
+  const x0 = Math.max(0, Math.floor(hint.x) - r), x1 = Math.min(w, Math.floor(hint.x) + r);
+  const y0 = Math.max(0, Math.floor(hint.y) - r), y1 = Math.min(h, Math.floor(hint.y) + r);
+  let ref = null;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const k = 4 * (y * w + x);
+      const R = px[k], G = px[k + 1], B = px[k + 2];
+      const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+      if (mx <= 30 || (mx - mn) / mx >= 0.3) continue;
+      const l = 0.299 * R + 0.587 * G + 0.114 * B;
+      if (!ref || l > ref.l) ref = { r: R, g: G, b: B, l };
+    }
+  }
+  if (!ref) return null;
+  const sum = ref.r + ref.g + ref.b;
+  const similar = (i) => {
+    const R = px[4 * i], G = px[4 * i + 1], B = px[4 * i + 2];
+    const l = 0.299 * R + 0.587 * G + 0.114 * B;
+    if (l <= 0.75 * ref.l || l >= 1.3 * ref.l) return false;
+    const s = Math.max(R + G + B, 1);
+    return Math.abs(R / s - ref.r / sum) < 0.04 && Math.abs(G / s - ref.g / sum) < 0.04;
+  };
+  const region = new Uint8Array(w * h);
+  const stack = [];
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * w + x;
+      if (similar(i)) { region[i] = 1; stack.push(i); }
+    }
+  }
+  let area = 0;
+  const limit = (w * h) / 4;
+  while (stack.length) {
+    const i = stack.pop();
+    if (++area > limit) return null;   // 背景まで同じ色だった
+    const x = i % w, y = (i / w) | 0;
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+      if (j >= 0 && !region[j] && similar(j)) { region[j] = 1; stack.push(j); }
+    }
+  }
+  if (area <= 150) return null;
+  area += fillEnclosedHoles(region, w, h);
+  const pts = [];
+  for (let i = 0; i < w * h; i++) if (region[i]) pts.push({ x: (i % w) + 0.5, y: ((i / w) | 0) + 0.5 });
+  const rect = minAreaRect(pts);
+  if (!rect) return null;
+  const a = len(sub(rect[1], rect[0])), b = len(sub(rect[3], rect[0]));
+  if (Math.min(a, b) <= 8) return null;
+  const aspect = Math.max(a, b) / Math.min(a, b), fill = area / (a * b);
+  debugLog('similar seed aspect', aspect.toFixed(2), 'fill', fill.toFixed(2));
+  return aspect > 1.1 && aspect < 1.95 && fill > 0.75 ? rect : null;
 }
 
 /** 明るさの境目（輪郭線）。白い椅子や壁、白っぽく写った手とカードを切り分けるのに使う */
