@@ -5,10 +5,10 @@
 import { CARD_W, CARD_H } from './printer.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-// 54枚の記号と名前（記号は「数字＋マーク」かジョーカー。絵柄は cards/<記号>.webp）
+// 52枚の記号と名前（記号は「数字＋マーク」。絵柄は cards/<記号>.webp。ジョーカーは 2026-10-16 に外した）
 const SUITS = { S: 'スペード', H: 'ハート', D: 'ダイヤ', C: 'クラブ' };
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-const CARDS = { JK1: 'ジョーカー1', JK2: 'ジョーカー2' };
+const CARDS = {};
 for (const [s, name] of Object.entries(SUITS)) for (const r of RANKS) CARDS[r + s] = `${name}の${r}`;
 // 自分で登録したカード（Pro。記号は MY-<UUID>）。画像はリンクと一緒にクラウドから届く（server/supabase_005_my_cards.sql）
 const isMine = (c) => typeof c === 'string' && /^MY-[0-9A-Fa-f-]{36}$/.test(c);

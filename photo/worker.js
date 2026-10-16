@@ -13,10 +13,13 @@ function cardIndex() {
     .then((b) => (b ? parseCardIndex(b) : null)).catch(() => null);
   return indexPromise;
 }
+// 見分ける用の素材があるカード（画面に出す絵柄から文字を消した ♠A・アプリから外したジョーカー。理由は Swift 側と tools/compress_cards.py）
+const MATCH_ONLY = new Set(['AS', 'JK1', 'JK2']);
 async function template(name) {
   if (!templates.has(name)) {
     templates.set(name, (async () => {
-      const res = await fetch(`cards/${name}.webp${self.location.search}`);
+      const file = MATCH_ONLY.has(name) ? `${name}_match` : name;
+      const res = await fetch(`cards/${file}.webp${self.location.search}`);
       if (!res.ok) return null;
       const bitmap = await createImageBitmap(await res.blob());
       const canvas = new OffscreenCanvas(CARD_W, CARD_H);
